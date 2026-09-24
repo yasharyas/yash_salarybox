@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
@@ -48,6 +49,14 @@ import com.yasharya.attendance.theme.AttendanceTheme
 import com.yasharya.attendance.theme.Motion
 import com.yasharya.attendance.theme.Spacing
 import com.yasharya.attendance.ui.capture.FaceCaptureSurface
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.yasharya.attendance.ui.components.PrimaryButton
+import androidx.activity.compose.BackHandler
 
 @Composable
 fun EnrolmentScreen(
@@ -74,7 +83,14 @@ fun EnrolmentScreen(
                 isBusy = state.isProcessing,
                 onCaptured = onCaptured,
                 onClose = onClose,
-                instructionOverride = state.message ?: state.stepInstruction,
+                // The pose text is the STANDING instruction for this step, so it
+                // goes on the second line. Passing it as an override silenced
+                // every live quality warning ("Find brighter light", "Open your
+                // eyes") on the one capture where quality decides whether all
+                // future check-ins work.
+                instructionOverride = state.message,
+                poseHint = state.stepInstruction,
+                attemptKey = state.captured,
             )
             SampleProgress(
                 captured = state.captured,
@@ -83,6 +99,10 @@ fun EnrolmentScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
+                    // Capped rather than full width: on a landscape or tablet
+                    // screen a full-width bar runs out past the oval and reads
+                    // as an unrelated divider behind it.
+                    .widthIn(max = 320.dp)
                     .padding(top = 56.dp, start = Spacing.xxl, end = Spacing.xxl),
             )
         }
@@ -120,53 +140,68 @@ private fun EnrolmentIntro(
             .padding(Spacing.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(Spacing.huge))
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.tertiaryContainer) {
-            Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Default.Face,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.size(48.dp),
-                )
-            }
-        }
-        Spacer(Modifier.height(Spacing.xxl))
-        Text(
-            text = "Enrol ${staffName.firstName()}'s face",
-            style = MaterialTheme.typography.headlineSmall,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(Spacing.md))
-        Text(
-            text = "We will take 3 photos: straight ahead, slightly left, " +
-                "slightly right. It takes about 20 seconds.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-
-        Spacer(Modifier.height(Spacing.xxxl))
+        // Content scrolls, actions stay pinned to the thumb. A weight(1f) spacer
+        // used to leave about 300dp of nothing in the middle here, and at
+        // fontScale 2.0 it collapsed to zero and pushed Start off the bottom
+        // with no way to reach it.
         Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Spacing.lg),
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ChecklistRow(Icons.Default.LightMode, "Good, even light")
-            ChecklistRow(Icons.Default.Visibility, "No sunglasses or hat")
-            ChecklistRow(Icons.Default.Person, "Only ${staffName.firstName()} in frame")
+            OvalHero()
+
+            Spacer(Modifier.height(Spacing.xxl))
+            Text(
+                text = "Enrol ${staffName.firstName()}'s face",
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(Spacing.md))
+            Text(
+                text = "We will take 3 photos: straight ahead, slightly left, " +
+                    "slightly right. It takes about 20 seconds.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(Modifier.height(Spacing.xxxl))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(Spacing.lg),
+            ) {
+                ChecklistRow(Icons.Default.LightMode, "Good, even light")
+                ChecklistRow(Icons.Default.Visibility, "No sunglasses or hat")
+                ChecklistRow(Icons.Default.Person, "Only ${staffName.firstName()} in frame")
+            }
+            Spacer(Modifier.height(Spacing.xxl))
         }
 
-        Spacer(Modifier.weight(1f))
-        Button(
-            onClick = onStart,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-        ) {
-            Text("Start", style = MaterialTheme.typography.labelLarge)
-        }
+        PrimaryButton(text = "Start", onClick = onStart)
         Spacer(Modifier.height(Spacing.sm))
         TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+    }
+}
+
+/**
+ * The frame the person is about to stand in, drawn at the same 1.32 ratio as the
+ * capture oval.
+ *
+ * This replaces a stock Icons.Default.Face glyph, which was also the login
+ * screen's brand mark, so the app's two most branded moments were the same piece
+ * of Material clip art. Drawn in code: no asset, no dependency.
+ */
+@Composable
+private fun OvalHero(modifier: Modifier = Modifier) {
+    val tertiary = MaterialTheme.colorScheme.tertiary
+    Canvas(modifier = modifier.size(104.dp, 137.dp)) {
+        drawOval(
+            color = tertiary,
+            style = Stroke(width = 3.dp.toPx()),
+        )
     }
 }
 
@@ -194,25 +229,37 @@ private fun SampleProgress(
 ) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "Photo ${minOf(captured + 1, total)} of $total" },
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             repeat(total) { index ->
                 Box(
                     Modifier
                         .weight(1f)
-                        .height(4.dp)
+                        .height(6.dp)
                         .clip(CircleShape)
+                        // White, not a palette token. This is drawn over live
+                        // camera in the poor lighting the app itself warns
+                        // about, and a token that is invisible on the only
+                        // background it is ever drawn on is a token misapplied.
                         .background(
                             if (index < captured) {
-                                MaterialTheme.colorScheme.primary
+                                Color.White
                             } else {
-                                Color.White.copy(alpha = 0.35f)
+                                Color.White.copy(alpha = 0.30f)
                             },
                         ),
                 )
             }
         }
+        Spacer(Modifier.height(Spacing.xs))
+        Text(
+            text = "Photo ${minOf(captured + 1, total)} of $total",
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White,
+        )
         if (samples.isNotEmpty()) {
             Spacer(Modifier.height(Spacing.md))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
@@ -247,7 +294,13 @@ private fun EnrolmentReview(
             .padding(Spacing.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(Spacing.huge))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
         Icon(
             Icons.Default.CheckCircle,
             contentDescription = null,
@@ -278,24 +331,15 @@ private fun EnrolmentReview(
             }
         }
 
-        Spacer(Modifier.weight(1f))
-        Button(
+            Spacer(Modifier.height(Spacing.xxl))
+        }
+
+        PrimaryButton(
+            text = "Save",
             onClick = onSave,
             enabled = !state.isProcessing,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-        ) {
-            if (state.isProcessing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            } else {
-                Text("Save", style = MaterialTheme.typography.labelLarge)
-            }
-        }
+            isBusy = state.isProcessing,
+        )
         Spacer(Modifier.height(Spacing.sm))
         // Retake all, not per sample. Per-sample retake adds a selection
         // affordance for a case that almost never comes up.
