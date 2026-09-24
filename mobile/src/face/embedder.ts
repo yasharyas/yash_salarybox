@@ -8,6 +8,10 @@
  * platforms rather than needing to be guessed again.
  */
 
+import * as tf from '@tensorflow/tfjs-core';
+import '@tensorflow/tfjs-backend-cpu';
+import * as tflite from '@tensorflow/tfjs-tflite';
+
 import { l2Normalize } from './match';
 
 export interface FaceEmbedder {
@@ -44,32 +48,33 @@ function wasmPath(): string {
   return `${globalThis.location?.origin ?? ''}/`;
 }
 
-type TfModule = typeof import('@tensorflow/tfjs-core');
-type TfliteModule = typeof import('@tensorflow/tfjs-tflite');
-type TFLiteModel = Awaited<ReturnType<TfliteModule['loadTFLiteModel']>>;
+type TFLiteModel = Awaited<ReturnType<typeof tflite.loadTFLiteModel>>;
 
-let runtime: Promise<{ tf: TfModule; tflite: TfliteModule }> | null = null;
+let runtime: Promise<void> | null = null;
 
 /**
- * Loaded on demand, never at module scope.
+ * Static imports, deliberately, even though this is 1.5 MB that only the two
+ * capture screens need.
  *
- * Two reasons. The page is pre-rendered to HTML at build time, and the tflite
- * client touches `self` as soon as it is imported, which is a hard crash under
- * Node. And it is 1.2 MB of JavaScript that only the two capture screens need,
- * so keeping it out of the entry bundle is the difference between a phone
- * showing the sign-in form promptly and waiting on a parser.
+ * They were dynamic first, to keep the weight out of the entry bundle. That
+ * split is what broke the deployed build. Metro decides which modules live in
+ * the entry chunk and which move to an async one, and that decision depends on
+ * traversal order, which differs between this Windows machine and Vercel's
+ * Linux builder. On Linux it moved core react-native-web component modules out
+ * of the entry chunk, so NativeWind's shim read FlatList off the react-native
+ * barrel during startup, the getter required a module that had not loaded yet,
+ * and the whole app died before rendering with "Cannot read properties of
+ * undefined (reading 'default')".
+ *
+ * One bundle cannot split differently on a different machine. Paying about a
+ * second of extra parse on first load is a good trade for a build whose
+ * behaviour does not depend on the operating system that produced it.
  */
-function loadRuntime(): Promise<{ tf: TfModule; tflite: TfliteModule }> {
+function loadRuntime(): Promise<void> {
   if (!runtime) {
     runtime = (async () => {
-      const [tf, tflite] = await Promise.all([
-        import('@tensorflow/tfjs-core'),
-        import('@tensorflow/tfjs-tflite'),
-      ]);
-      await import('@tensorflow/tfjs-backend-cpu');
       tflite.setWasmPath(wasmPath());
       await tf.ready();
-      return { tf, tflite };
     })();
   }
   return runtime;
@@ -89,7 +94,6 @@ export class MobileFaceNetEmbedder implements FaceEmbedder {
   private readonly batchSize: number;
 
   private constructor(
-    private readonly tf: TfModule,
     private readonly model: TFLiteModel,
     shape: { batch: number; size: number; dim: number },
   ) {
@@ -99,7 +103,7 @@ export class MobileFaceNetEmbedder implements FaceEmbedder {
   }
 
   static async load(url: string = MODEL_URL): Promise<MobileFaceNetEmbedder> {
-    const { tf, tflite } = await loadRuntime();
+    await loadRuntime();
     const model = await tflite.loadTFLiteModel(url);
 
     const inputShape = model.inputs[0]?.shape;
@@ -112,7 +116,7 @@ export class MobileFaceNetEmbedder implements FaceEmbedder {
     const size = inputShape[1] ?? 112;
     const dim = outputShape[outputShape.length - 1] ?? 192;
 
-    return new MobileFaceNetEmbedder(tf, model, { batch, size, dim });
+    return new MobileFaceNetEmbedder(model, { batch, size, dim });
   }
 
   async embed(alignedFace: HTMLCanvasElement): Promise<Float32Array> {
@@ -145,7 +149,7 @@ export class MobileFaceNetEmbedder implements FaceEmbedder {
       }
     }
 
-    const input = this.tf.tensor4d(values, [
+    const input = tf.tensor4d(values, [
       this.batchSize,
       this.inputSize,
       this.inputSize,
