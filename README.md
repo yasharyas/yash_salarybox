@@ -8,6 +8,11 @@ location.
 Everything runs on-device. There is no backend, no network call for recognition,
 and no face data leaves the phone.
 
+There are **two front ends over the same design**: the Android app in `app/`,
+and a React Native (Expo) web build in `mobile/` that installs on an iPhone as a
+PWA. Both run the same MobileFaceNet file through the same alignment maths at
+the same threshold. See [Also runs on an iPhone](#also-runs-on-an-iphone).
+
 ---
 
 ## Demo
@@ -71,6 +76,92 @@ someone through the admin screen creates their login automatically.
 
 ---
 
+## Also runs on an iPhone
+
+`mobile/` is a second front end for the same product: **Expo + React Native +
+gluestack-ui**, exported as a static PWA. It exists for two reasons that turned
+out to be the same reason.
+
+gluestack-ui is a React Native component library. There is no way to render it
+inside Jetpack Compose, so "use gluestack" necessarily means a React Native app.
+And a React Native app exported to the web is the one route onto an iPhone that
+needs no Mac, no Apple Developer account and no App Store review: open the URL
+in Safari, Add to Home Screen, and it runs full screen with the real front
+camera.
+
+### It is the same pipeline, not a lookalike
+
+The web build is a port, not an approximation:
+
+- **The same model file.** `mobile/scripts/sync-assets.mjs` copies
+  `mobile_face_net.tflite` out of the Android module at build time rather than
+  keeping a second copy, and prints its sha256 so the claim is checkable. It
+  runs in the browser through `@tensorflow/tfjs-tflite`.
+- **The same alignment.** The ArcFace two-point similarity transform from
+  `FaceAligner.kt`, ported constant for constant.
+- **The same scaling and matcher.** `(pixel - 127.5) / 128`, cosine similarity,
+  best-of-N across enrolled samples, threshold 0.55.
+
+Detection is the one deliberate difference: ML Kit is Android-only, so the web
+build uses MediaPipe Tasks Vision, which is strictly richer (478 landmarks
+including iris centres, a head-pose matrix and blendshapes for eye openness).
+
+Because the pipeline is the same, the threshold could be carried over instead of
+guessed. `/diagnostics` re-runs the Android instrumentation accuracy matrix in
+the browser, over the same seven photographs:
+
+| | Android (ML Kit) | Web (MediaPipe) |
+|---|---|---|
+| genuine, 6 pairs | min 0.832, mean 0.914 | min **0.805**, mean **0.903** |
+| impostor, 15 pairs | max 0.121 | max **0.146** |
+| margin | 0.711 | **0.659** |
+| threshold 0.55 | inside the gap | inside the gap |
+
+The small differences are the different landmark source and a different
+resampler, not a different idea. Open `/diagnostics` on the deployed build to
+reproduce the table, and to look at the aligned crops, which is how the
+alignment bug below was caught in the first place.
+
+### Running it
+
+```bash
+cd mobile && npm install && npm run web
+```
+
+Then open the printed URL. `npm run build:web` produces a static `dist/`.
+
+### Putting it on your phone
+
+The project is configured for Vercel (`mobile/vercel.json` sets the build, the
+output directory and the rewrites that the exported `[id].html` routes need).
+From `mobile/`:
+
+```bash
+npx vercel --prod
+```
+
+Or import the repository at vercel.com/new with **Root Directory** set to
+`mobile`. Then open the deployment on the phone, share sheet, Add to Home
+Screen. It installs with its own icon, runs without Safari's chrome, and asks
+for the camera the first time you mark attendance.
+
+Any HTTPS host works. `getUserMedia` and WebCrypto both require a secure
+context, so plain `http://` over a LAN will not do.
+
+### What is different from the Android build
+
+- Storage is IndexedDB in that browser, so data does not follow you to another
+  device and clearing site data resets it. The Android build uses Room.
+- The first visit downloads roughly 20 MB of model and wasm. It is cached after
+  that, and the staff home screen starts the download in the background while
+  you read it rather than when you tap Mark attendance.
+- Reverse geocoding is not wired up, so records show coordinates rather than a
+  street address.
+- It cannot run in Expo Go. The face pipeline needs wasm that Expo Go has no way
+  to load, which is exactly why the web export is the delivery route.
+
+---
+
 ## Stack
 
 | Concern           | Choice                                            |
@@ -89,6 +180,19 @@ someone through the admin screen creates their login automatically.
 
 Versions are pinned in [`gradle/libs.versions.toml`](gradle/libs.versions.toml).
 AGP 9.4.1, Gradle 9.7.0, Kotlin 2.4.20, compileSdk 37, targetSdk 36, minSdk 26.
+
+The web build in `mobile/` is a different stack for the same design:
+
+| Concern           | Choice                                            |
+|-------------------|---------------------------------------------------|
+| Language / UI     | TypeScript, React Native, gluestack-ui on NativeWind |
+| Framework         | Expo SDK 57, static web export                    |
+| Navigation        | expo-router, file-based                           |
+| Database          | IndexedDB                                         |
+| Camera            | `getUserMedia` into a `<video>`, frames read per rAF tick |
+| Face detection    | MediaPipe Tasks Vision FaceLandmarker             |
+| Face recognition  | The same MobileFaceNet file, via `@tensorflow/tfjs-tflite` |
+| Location          | `navigator.geolocation`                           |
 
 ---
 
@@ -432,6 +536,12 @@ The TFLite model was confirmed loading on-device from logcat
 the bundled file), and the capture path correctly reports "No face in that photo"
 against the emulator's synthetic camera scene.
 
+### The web port is verified against these same numbers
+
+`/diagnostics` in the web build re-runs the matrix below in the browser and
+prints it on screen, so the two implementations can be compared directly rather
+than taken on trust. See [Also runs on an iPhone](#also-runs-on-an-iphone).
+
 ### Face matching is verified, with real faces
 
 The emulator's camera renders a synthetic scene with no face in it, so pointing
@@ -528,6 +638,22 @@ app/src/main/java/com/yasharya/attendance/
 │   ├── AppNavigation.kt
 │   └── Routes.kt
 └── util/
+```
+
+```
+mobile/
+├── app/                      expo-router routes, one file per screen
+│   ├── +html.tsx             PWA shell, meta tags, MediaPipe bootstrap
+│   ├── diagnostics.tsx       the accuracy matrix, re-run in the browser
+│   └── pixels.tsx            every sprite, at the sizes the app uses them
+├── components/ui/            gluestack-ui components
+├── scripts/
+│   ├── sync-assets.mjs       copies the model out of the Android module
+│   └── make-icons.py         renders the PWA icons from the FACE sprite
+└── src/
+    ├── data/                 IndexedDB, PBKDF2, session, repository
+    ├── face/                 aligner, embedder, landmarker, matcher, gates
+    └── ui/                   screen shell, pixel art, camera surface
 ```
 
 ---
