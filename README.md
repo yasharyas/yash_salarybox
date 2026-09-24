@@ -86,7 +86,8 @@ behind separate interfaces.
    112x112 template with a similarity transform (rotation, uniform scale,
    translation). Embeddings are not rotation invariant, so a head tilted fifteen
    degrees produces a measurably different vector for the same person. This step
-   is the cheapest accuracy win in the pipeline.
+   is the cheapest accuracy win in the pipeline, and the easiest to get silently
+   wrong: see below.
 
 5. **Embedding.** The aligned crop is normalised to `(px - 127.5) / 128.0`, RGB,
    NHWC, and run through MobileFaceNet to get a 192-d vector.
@@ -127,6 +128,36 @@ cover the realistic range for someone holding a phone.
 They are stored **separately and matched on the best score**, not averaged. The
 mean of several poses lands in a region that represents none of them; "closest to
 any pose I have seen you in" is both more accurate and easier to reason about.
+
+### The alignment bug that measuring caught
+
+`ML Kit`'s `FaceLandmark.LEFT_EYE` is named from the **image** point of view, not
+the subject's. The first version of `FaceAligner` assumed the opposite and swapped
+the two eyes.
+
+That does not throw, does not log, and does not look wrong in code. It rotates
+every aligned crop by roughly 180 degrees. And because **both** enrolment and
+verification run through the same function, the embedding space stayed
+self-consistent: matching still "worked", on upside-down faces the model was
+never trained on.
+
+What it cost, measured on the same fixtures before and after the one-line fix:
+
+| | swapped eyes | correct |
+|---|---|---|
+| Genuine min | 0.854 | 0.832 |
+| **Impostor max** | **0.767** | **0.121** |
+| Impostor mean | 0.648 | −0.020 |
+| **Separation margin** | **0.087** | **0.711** |
+
+An eight-fold collapse in impostor similarity. With correct alignment different
+people land near orthogonal, which is what these embeddings are supposed to do.
+
+It was found by looking at the enrolment thumbnails on the staff profile and
+noticing they were upside down. `alignedCropPutsEyesOnTheTemplate` now catches it
+properly: it re-runs detection on the aligned crop and asserts the eyes land
+within 8px of the template points. Before the fix, ML Kit could not find a face
+in the aligned output at all.
 
 ### The threshold, and why measuring it mattered
 
@@ -315,7 +346,7 @@ Run the tests:
 Not just "it compiles". The app was installed on an Android 16 (API 36) emulator
 and driven through sign-in, the admin staff list, a staff profile, the enrolment
 intro, the live camera screen and the staff home, checking logcat for crashes at
-each step. Two real bugs came out of that and are fixed:
+each step. Five real bugs came out of that and are fixed:
 
 - **Sign-in rejected valid credentials on a fresh install.** Demo seeding ran
   from a Room `onCreate` callback, which fires part-way through the first
@@ -324,6 +355,17 @@ each step. Two real bugs came out of that and are fixed:
 - **The manual shutter never captured.** Its `LaunchedEffect` reset the same flag
   it was keyed on, so it cancelled its own capture coroutine. It is now keyed on
   a monotonic counter.
+- **Every aligned face crop was upside down**, silently degrading matching. See
+  the alignment section above.
+- **Auto-capture kept firing behind the failure sheet.** After a failed match the
+  analyzer went on emitting Ready frames, so attempts 2 and 3 fired themselves
+  within seconds while the user was still reading why attempt 1 failed, taking
+  them straight to the three-attempt lockout. The capture surface is now busy for
+  as long as a result is on screen.
+- **Any rotation threw you back to the root screen.** Session-driven navigation
+  re-ran on every configuration change and popped the whole back stack, so
+  rotating during enrolment discarded the photos taken so far. It now navigates
+  only on a genuine role change.
 
 The TFLite model was confirmed loading on-device from logcat
 (`Replacing 263 out of 264 node(s) with delegate`, matching the 264 operators in
