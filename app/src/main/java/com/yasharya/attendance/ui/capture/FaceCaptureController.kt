@@ -50,6 +50,17 @@ class FaceCaptureController(private val context: Context) {
 
     @Volatile var poseTarget: PoseTarget = PoseTarget.Frontal
 
+    /**
+     * Set once a frame has been handed off for capture, and held until the
+     * screen asks for a new attempt.
+     *
+     * Without it the analyzer keeps publishing Ready for the frames that arrive
+     * while the photo is still being embedded and matched, the screen sees
+     * Ready again and starts a second countdown behind the first one. The user
+     * watches the timer run twice for one capture.
+     */
+    @Volatile private var handedOff: Boolean = false
+
     private val analysisExecutor = Executors.newSingleThreadExecutor()
     private var evaluator: FaceQualityEvaluator? = null
 
@@ -62,6 +73,8 @@ class FaceCaptureController(private val context: Context) {
         .build()
 
     private val analyzer = FaceAnalyzer { faces, width, height, luma ->
+        if (handedOff) return@FaceAnalyzer
+
         val current = evaluator?.takeIf { it.matches(width, height) }
             ?: FaceQualityEvaluator(width, height).also { evaluator = it }
 
@@ -140,7 +153,15 @@ class FaceCaptureController(private val context: Context) {
         _captureState.value = state
     }
 
+    /** Stops live guidance overwriting the state while a capture is in flight. */
+    fun beginCapture() {
+        handedOff = true
+        _readyStreak.value = 0
+        _captureState.value = FaceCaptureState.Capturing
+    }
+
     fun resetStreak() {
+        handedOff = false
         _readyStreak.value = 0
         evaluator?.reset()
     }

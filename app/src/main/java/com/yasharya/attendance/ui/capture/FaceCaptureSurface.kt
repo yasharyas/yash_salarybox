@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.compose.CameraXViewfinder
@@ -171,10 +172,10 @@ fun FaceCaptureSurface(
     var showManualShutter by remember { mutableStateOf(false) }
     var hasBeenReady by remember { mutableStateOf(false) }
 
-    // A monotonic counter, not a boolean flag. A flag that the effect resets
-    // changes its own key, which cancels the very coroutine doing the capture
-    // before it can finish.
-    var shutterTick by remember { mutableIntStateOf(0) }
+    // One monotonic counter drives every capture, from the countdown and from
+    // the shutter alike. A counter rather than a flag because a flag the effect
+    // resets changes its own key and cancels the capture it just started.
+    var captureTick by remember { mutableIntStateOf(0) }
 
     // A screen-reader user cannot see the framing, so auto-capture is replaced
     // by an always-available shutter rather than left as a race they cannot win.
@@ -205,10 +206,13 @@ fun FaceCaptureSurface(
                 delay(Motion.CountdownTickMs.toLong())
             }
             countdown = null
-            controller.setState(FaceCaptureState.Capturing)
-            runCatching { controller.capture() }
-                .onSuccess(onCaptured)
-                .onFailure { controller.setState(FaceCaptureState.CameraError) }
+            // Hand off rather than capturing here. Taking the picture inside
+            // this effect cannot work: the first thing a capture does is move
+            // the state to Capturing, which makes shouldCountDown false, which
+            // cancels THIS coroutine and with it the capture that just started.
+            // The symptom was a silent LeftCompositionCancellationException and
+            // a countdown that looped forever without ever producing a photo.
+            captureTick++
         } finally {
             countdown = null
         }
@@ -279,7 +283,7 @@ fun FaceCaptureSurface(
                 .padding(bottom = Spacing.xxl),
         ) {
             FilledIconButton(
-                onClick = { shutterTick++ },
+                onClick = { captureTick++ },
                 modifier = Modifier.size(72.dp),
                 shape = CircleShape,
             ) {
@@ -294,14 +298,24 @@ fun FaceCaptureSurface(
         overlay()
     }
 
-    LaunchedEffect(shutterTick) {
-        if (shutterTick == 0) return@LaunchedEffect
-        controller.setState(FaceCaptureState.Capturing)
+    // Keyed only on the counter, so nothing about the capture state can cancel
+    // a capture that is already in flight.
+    LaunchedEffect(captureTick) {
+        if (captureTick == 0) return@LaunchedEffect
+        controller.beginCapture()
         runCatching { controller.capture() }
             .onSuccess(onCaptured)
-            .onFailure { controller.setState(FaceCaptureState.CameraError) }
+            .onFailure { error ->
+                // Logged, not just swallowed. "Camera unavailable" with nothing
+                // behind it is unactionable for whoever has to work out why a
+                // device fails to capture.
+                Log.w(CAPTURE_TAG, "Capture failed", error)
+                controller.setState(FaceCaptureState.CameraError)
+            }
     }
 }
+
+private const val CAPTURE_TAG = "FaceCapture"
 
 /**
  * The scrim with an oval punched out of it.
