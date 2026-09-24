@@ -27,19 +27,22 @@ const CHANNELS = 3;
 export const MODEL_URL = '/models/mobile_face_net.tflite';
 
 /**
- * The tflite wasm runtime is served from the site root.
+ * An ABSOLUTE url, rebuilt per call. This looks fussy and is not.
  *
- * Not a style choice. setWasmPath configures the Task Library clients, not
- * loadTFLiteModel, whose emscripten loader resolves its own script against the
- * document origin. Anywhere else and it asks for /tflite_web_api_cc_simd.js and
- * gets index.html back, which fails as "MIME type text/html is not
- * executable". scripts/sync-assets.mjs puts the files where it looks.
+ * The emscripten loader inside tfjs-tflite resolves its own wasm script
+ * against the current document, not against the site root. A relative path
+ * therefore works on /diagnostics and breaks on /enrol/1, where it asks for
+ * /enrol/tflite_web_api_cc_simd.js, gets index.html back, and dies with "MIME
+ * type text/html is not executable". Route-dependent model loading is exactly
+ * the kind of bug that survives a demo and fails in use.
  *
- * Self-hosted rather than fetched from a CDN: this is the one download the face
- * pipeline cannot proceed without, and a third party having a bad day should
- * not be able to stop people marking attendance.
+ * Self-hosted rather than fetched from a CDN: this is the one download the
+ * face pipeline cannot proceed without, and a third party having a bad day
+ * should not be able to stop people marking attendance.
  */
-const WASM_PATH = '/';
+function wasmPath(): string {
+  return `${globalThis.location?.origin ?? ''}/`;
+}
 
 type TfModule = typeof import('@tensorflow/tfjs-core');
 type TfliteModule = typeof import('@tensorflow/tfjs-tflite');
@@ -64,7 +67,7 @@ function loadRuntime(): Promise<{ tf: TfModule; tflite: TfliteModule }> {
         import('@tensorflow/tfjs-tflite'),
       ]);
       await import('@tensorflow/tfjs-backend-cpu');
-      tflite.setWasmPath(WASM_PATH);
+      tflite.setWasmPath(wasmPath());
       await tf.ready();
       return { tf, tflite };
     })();
