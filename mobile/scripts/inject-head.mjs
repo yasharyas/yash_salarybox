@@ -17,8 +17,12 @@
  * no Node-side rendering to go wrong.
  *
  * The matching half of this lives in vercel.json, which falls every unmatched
- * path back to index.html so client-side routes survive a refresh or a shared
- * link. It carries no explanatory comment because vercel.json is validated
+ * EXTENSIONLESS path back to index.html so client-side routes survive a
+ * refresh or a shared link. Paths with an extension are left alone, so a file
+ * that is genuinely missing returns a real 404 instead of index.html served as
+ * an icon or a script (which fails silently, as a blank icon or an HTML parse
+ * error in the wasm loader). No route in this app contains a dot. The rewrite
+ * carries no explanatory comment because vercel.json is validated
  * against a strict schema that rejects unknown properties, including a
  * "comment" key inside a rewrite. That mistake cost one deployment.
  */
@@ -49,12 +53,31 @@ const MEDIAPIPE_VISION =
  *
  * The app still imports the package's TYPES, which are erased before Metro
  * sees them, so src/face/landmarker.ts stays fully typed.
+ *
+ * The colours follow the app's own background in each scheme (global.css:
+ * white in light, #0A0A0A in dark), for two reasons found by auditing the
+ * installed app rather than the browser tab:
+ *
+ * - The status bar style was black-translucent, which draws WHITE clock and
+ *   battery glyphs over the page. In light mode the page is white, so on an
+ *   iPhone the status bar simply vanished. "default" lets iOS pick legible
+ *   glyphs and paint the bar from theme-color, which now has a light and a
+ *   dark value instead of one dark value that was wrong half the time.
+ *
+ * - Nothing painted the page before the 4.9 MB bundle parsed, so launch showed
+ *   a white flash, which in dark mode reads as a flicker. The inline style
+ *   paints the right background from the first frame.
  */
 const HEAD = `
-    <meta name="theme-color" content="#0B0B0F" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0A0A0A" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Attendance" />
+    <style id="launch-background">
+      html, body { background-color: #FFFFFF; }
+      @media (prefers-color-scheme: dark) { html, body { background-color: #0A0A0A; } }
+    </style>
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
