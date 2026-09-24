@@ -11,73 +11,77 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.compose.CameraXViewfinder
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.compose.foundation.Canvas
 import com.yasharya.attendance.face.FaceCaptureState
 import com.yasharya.attendance.face.FaceQualityEvaluator
 import com.yasharya.attendance.face.PoseTarget
@@ -86,17 +90,23 @@ import com.yasharya.attendance.theme.Motion
 import com.yasharya.attendance.theme.Spacing
 import kotlinx.coroutines.delay
 
+/** Oval geometry, shared by the scrim and by whatever has to sit clear of it. */
+private const val OVAL_WIDTH_FRACTION = 0.72f
+private const val OVAL_ASPECT = 1.32f
+
 /**
  * The shared camera screen for both enrolling a face and proving one.
  *
- * The visible design decisions, in order of how much they matter:
+ * The design decisions that matter, in order:
  *
  * - One instruction at a time, chosen by priority. See FaceQualityEvaluator.
- * - Auto-capture once the frame has been good for three consecutive analyses,
+ * - Auto-capture once the frame has held good for three consecutive analyses,
  *   with a three second countdown that cancels the instant anything slips. A
- *   shutter button appears after eight seconds of struggle so the flow is never
- *   a dead end, and appears immediately under a screen reader.
+ *   shutter appears after eight seconds of struggle so the flow is never a dead
+ *   end, and appears immediately under a screen reader.
  * - The ring only turns red for problems a small movement will not fix.
+ * - Everything positions itself from the oval, so the overlay holds together at
+ *   any screen size rather than at one tested one.
  */
 @Composable
 fun FaceCaptureSurface(
@@ -105,7 +115,12 @@ fun FaceCaptureSurface(
     onCaptured: (Bitmap) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Replaces the headline. Used for a transient error. */
     instructionOverride: String? = null,
+    /** Standing instruction for this step, shown under live guidance. */
+    poseHint: String? = null,
+    /** Changing this cancels any countdown and resets the ready streak. */
+    attemptKey: Int = 0,
     overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -141,7 +156,7 @@ fun FaceCaptureSurface(
     DisposableEffect(controller) { onDispose { controller.release() } }
 
     LaunchedEffect(controller, lifecycleOwner) { controller.bind(lifecycleOwner) }
-    LaunchedEffect(poseTarget) {
+    LaunchedEffect(poseTarget, attemptKey) {
         controller.poseTarget = poseTarget
         controller.resetStreak()
     }
@@ -150,17 +165,15 @@ fun FaceCaptureSurface(
     val rawState by controller.captureState.collectAsState()
     val readyStreak by controller.readyStreak.collectAsState()
 
-    val state = when {
-        isBusy -> FaceCaptureState.Verifying
-        else -> rawState
-    }
+    val state = if (isBusy) FaceCaptureState.Verifying else rawState
 
     var countdown by remember { mutableStateOf<Int?>(null) }
     var showManualShutter by remember { mutableStateOf(false) }
+    var hasBeenReady by remember { mutableStateOf(false) }
+
     // A monotonic counter, not a boolean flag. A flag that the effect resets
     // changes its own key, which cancels the very coroutine doing the capture
-    // before it can finish. The counter only ever moves forward, so each tap is
-    // one new key and one uninterrupted capture.
+    // before it can finish.
     var shutterTick by remember { mutableIntStateOf(0) }
 
     // A screen-reader user cannot see the framing, so auto-capture is replaced
@@ -170,7 +183,7 @@ fun FaceCaptureSurface(
 
     // Keyed on a STABLE boolean, not on readyStreak. The streak increments on
     // every analysed frame, so keying on it would cancel and restart this
-    // coroutine several times a second and the countdown would never reach zero.
+    // coroutine several times a second and the countdown would never finish.
     val shouldCountDown = autoCaptureEnabled &&
         !isBusy &&
         state.isReady &&
@@ -181,10 +194,10 @@ fun FaceCaptureSurface(
             countdown = null
             return@LaunchedEffect
         }
+        hasBeenReady = true
         // Always restart from three. A countdown that resumes half way through
         // is unpredictable, and unpredictable timing makes people flinch at
-        // exactly the wrong moment. Cancellation resets it by construction:
-        // leaving the ready state cancels this coroutine.
+        // exactly the wrong moment. Cancellation resets it by construction.
         try {
             for (tick in 3 downTo 1) {
                 countdown = tick
@@ -201,16 +214,24 @@ fun FaceCaptureSurface(
         }
     }
 
-    LaunchedEffect(touchExplorationOn) {
+    // Offer the shutter after a spell of struggle, measured per step rather than
+    // once per screen, so the second and third enrolment poses get it too.
+    LaunchedEffect(touchExplorationOn, poseTarget, attemptKey) {
         if (touchExplorationOn) {
             showManualShutter = true
-        } else {
-            delay(FaceQualityEvaluator.MANUAL_SHUTTER_AFTER_MS)
-            showManualShutter = true
+            return@LaunchedEffect
         }
+        showManualShutter = false
+        hasBeenReady = false
+        delay(FaceQualityEvaluator.MANUAL_SHUTTER_AFTER_MS)
+        showManualShutter = true
     }
 
-    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize().background(Color.Black)) {
+        val ovalWidth = minOf(maxWidth * OVAL_WIDTH_FRACTION, maxHeight * 0.5f)
+        val ovalHeight = minOf(ovalWidth * OVAL_ASPECT, maxHeight * 0.62f)
+        val ovalBottom = maxHeight * FaceQualityEvaluator.TARGET_CENTRE_Y + ovalHeight / 2f
+
         surfaceRequest?.let { request ->
             CameraXViewfinder(
                 surfaceRequest = request,
@@ -221,6 +242,8 @@ fun FaceCaptureSurface(
         OvalScrim(
             state = state,
             countdown = countdown,
+            ovalWidth = ovalWidth,
+            ovalHeight = ovalHeight,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -231,27 +254,33 @@ fun FaceCaptureSurface(
                 .windowInsetsPadding(WindowInsets.safeDrawing),
         )
 
+        // Anchored below the oval rather than to a fixed offset, so it never
+        // lands on the ring or over the subject's chin on a shorter screen.
         GuidanceBlock(
             state = state,
             countdown = countdown,
             instructionOverride = instructionOverride,
+            poseHint = poseHint,
             modifier = Modifier
-                .align(Alignment.Center)
-                .padding(top = 320.dp)
+                .align(Alignment.TopCenter)
+                .padding(top = ovalBottom + Spacing.xxl)
                 .padding(horizontal = Spacing.xxl),
         )
 
-        if (showManualShutter && !isBusy) {
+        AnimatedVisibility(
+            // Not while a countdown is running: a tap at "2" would race
+            // auto-capture into a second exposure.
+            visible = showManualShutter && !isBusy && countdown == null,
+            enter = fadeIn(Motion.tweenEffect()) + scaleIn(Motion.springSpatial(), initialScale = 0.8f),
+            exit = fadeOut(Motion.tweenEffectFast()),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(bottom = Spacing.xxl),
+        ) {
             FilledIconButton(
-                // The click handler stays synchronous and flips a flag; the
-                // LaunchedEffect below owns the suspending capture, so it is
-                // cancelled cleanly if the screen goes away mid-capture.
                 onClick = { shutterTick++ },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(bottom = Spacing.xxl)
-                    .size(72.dp),
+                modifier = Modifier.size(72.dp),
                 shape = CircleShape,
             ) {
                 Icon(
@@ -284,6 +313,8 @@ fun FaceCaptureSurface(
 private fun OvalScrim(
     state: FaceCaptureState,
     countdown: Int?,
+    ovalWidth: Dp,
+    ovalHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     val outline = MaterialTheme.colorScheme.outlineVariant
@@ -308,15 +339,15 @@ private fun OvalScrim(
         targetValue = if (countdown != null) (4 - countdown) / 3f else 0f,
         // Linear, because a countdown that eases is a countdown that lies about
         // how much time is left.
-        animationSpec = tween(Motion.CountdownTickMs, easing = androidx.compose.animation.core.LinearEasing),
+        animationSpec = tween(Motion.CountdownTickMs, easing = LinearEasing),
         label = "countdown",
     )
 
     Canvas(modifier = modifier.clearAndSetSemantics { }) {
-        val ovalWidth = size.width * 0.72f
-        val ovalHeight = ovalWidth * 1.32f
-        val left = (size.width - ovalWidth) / 2f
-        val top = size.height * FaceQualityEvaluator.TARGET_CENTRE_Y - ovalHeight / 2f
+        val widthPx = ovalWidth.toPx()
+        val heightPx = ovalHeight.toPx()
+        val left = (size.width - widthPx) / 2f
+        val top = size.height * FaceQualityEvaluator.TARGET_CENTRE_Y - heightPx / 2f
 
         // BlendMode.Clear only punches a hole if it is composited against its own
         // layer; without saveLayer it would clear straight through to the camera
@@ -327,7 +358,7 @@ private fun OvalScrim(
             drawOval(
                 color = Color.Transparent,
                 topLeft = Offset(left, top),
-                size = Size(ovalWidth, ovalHeight),
+                size = Size(widthPx, heightPx),
                 blendMode = BlendMode.Clear,
             )
             canvas.restore()
@@ -336,7 +367,7 @@ private fun OvalScrim(
         drawOval(
             color = ringColor,
             topLeft = Offset(left, top),
-            size = Size(ovalWidth, ovalHeight),
+            size = Size(widthPx, heightPx),
             style = Stroke(width = 4.dp.toPx()),
         )
 
@@ -347,7 +378,7 @@ private fun OvalScrim(
                 sweepAngle = 360f * sweep,
                 useCenter = false,
                 topLeft = Offset(left, top),
-                size = Size(ovalWidth, ovalHeight),
+                size = Size(widthPx, heightPx),
                 style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round),
             )
         }
@@ -359,11 +390,20 @@ private fun GuidanceBlock(
     state: FaceCaptureState,
     countdown: Int?,
     instructionOverride: String?,
+    poseHint: String?,
     modifier: Modifier = Modifier,
 ) {
     val guidance = state.guidance()
     val primaryText = countdown?.toString() ?: instructionOverride ?: guidance.primary
-    val secondaryText = if (countdown != null || instructionOverride != null) null else guidance.secondary
+
+    // The headline is whatever the frame needs right now; the second line is the
+    // standing instruction for this step. Enrolment used to pass its pose text as
+    // an override, which silenced every live quality warning on the one capture
+    // where quality decides whether all future check-ins work.
+    val secondaryText = when {
+        countdown != null -> null
+        else -> guidance.secondary ?: poseHint
+    }
 
     AnimatedContent(
         targetState = primaryText to secondaryText,
@@ -376,41 +416,47 @@ private fun GuidanceBlock(
         label = "guidance",
         modifier = modifier,
     ) { (primary, secondary) ->
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+        Surface(
+            // Opaque, not a translucent scrim. The actionable half of the
+            // instruction lives on the second line, and over a blown-out frame a
+            // 12sp line at 82% alpha on 55% black falls below AA.
+            color = MaterialTheme.colorScheme.inverseSurface,
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            shape = MaterialTheme.shapes.large,
             modifier = Modifier
-                .widthIn(max = 300.dp)
+                .fillMaxWidth()
                 // One polite live region for the whole block. Three separate
                 // announcements would interrupt each other mid-sentence.
                 .semantics { liveRegion = LiveRegionMode.Polite },
         ) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.55f),
-                shape = MaterialTheme.shapes.large,
+            Column(
+                modifier = Modifier.padding(horizontal = Spacing.xl, vertical = Spacing.md),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = Spacing.xl, vertical = Spacing.md),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
+                if (state == FaceCaptureState.Verifying) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.inverseOnSurface,
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                }
+                Text(
+                    text = primary,
+                    style = if (countdown != null) {
+                        MaterialTheme.typography.displaySmall
+                    } else {
+                        MaterialTheme.typography.titleMedium
+                    },
+                    textAlign = TextAlign.Center,
+                )
+                if (secondary != null) {
+                    Spacer(Modifier.height(Spacing.xs))
                     Text(
-                        text = primary,
-                        style = if (countdown != null) {
-                            MaterialTheme.typography.displaySmall
-                        } else {
-                            MaterialTheme.typography.titleMedium
-                        },
-                        color = Color.White,
+                        text = secondary,
+                        style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
                     )
-                    if (secondary != null) {
-                        Spacer(Modifier.height(Spacing.xs))
-                        Text(
-                            text = secondary,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.82f),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
                 }
             }
         }
@@ -420,14 +466,18 @@ private fun GuidanceBlock(
 @Composable
 private fun CaptureTopBar(onClose: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier = modifier.padding(Spacing.sm)) {
-        Surface(
+        // A plain IconButton at its natural 48dp, not one squeezed inside a 44dp
+        // Surface. This is the only way out of a full-screen camera, so it gets
+        // the full touch target.
+        FilledIconButton(
+            onClick = onClose,
             shape = CircleShape,
-            color = Color.Black.copy(alpha = 0.45f),
-            modifier = Modifier.size(44.dp),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = Color.Black.copy(alpha = 0.45f),
+                contentColor = Color.White,
+            ),
         ) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Close camera", tint = Color.White)
-            }
+            Icon(Icons.Default.Close, contentDescription = "Close camera")
         }
     }
 }
@@ -459,7 +509,7 @@ private fun CameraPermissionPrompt(
                 Text(if (permanentlyDenied) "Open settings" else "Allow camera")
             }
             Spacer(Modifier.height(Spacing.sm))
-            androidx.compose.material3.TextButton(onClick = onClose) { Text("Not now") }
+            TextButton(onClick = onClose) { Text("Not now") }
         }
     }
 }

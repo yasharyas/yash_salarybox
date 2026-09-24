@@ -79,7 +79,16 @@ fun MarkAttendanceScreen(
         if (outcome !is AttendanceOutcome.Marked) {
             FaceCaptureSurface(
                 poseTarget = PoseTarget.Frontal,
-                isBusy = state.isVerifying,
+                // Busy while a result sheet is up, not just while verifying.
+                // Without this the analyzer keeps emitting Ready frames behind
+                // the sheet, the countdown restarts, and attempts 2 and 3 fire
+                // themselves within seconds while the user is still reading why
+                // attempt 1 failed. They then hit the three-attempt lockout
+                // having consciously tried once.
+                isBusy = state.isVerifying || outcome != null,
+                // Changing this cancels any in-flight countdown and clears the
+                // ready streak, so a retry starts from a clean frame.
+                attemptKey = state.attempts,
                 onCaptured = onCaptured,
                 onClose = onClose,
             )
