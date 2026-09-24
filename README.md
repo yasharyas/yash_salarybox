@@ -285,6 +285,32 @@ Run the tests:
 
 ---
 
+## What was actually verified
+
+Not just "it compiles". The app was installed on an Android 16 (API 36) emulator
+and driven through sign-in, the admin staff list, a staff profile, the enrolment
+intro, the live camera screen and the staff home, checking logcat for crashes at
+each step. Two real bugs came out of that and are fixed:
+
+- **Sign-in rejected valid credentials on a fresh install.** Demo seeding ran
+  from a Room `onCreate` callback, which fires part-way through the first
+  database access, so the login query raced it and read an empty table. Seeding
+  is now an awaited startup job.
+- **The manual shutter never captured.** Its `LaunchedEffect` reset the same flag
+  it was keyed on, so it cancelled its own capture coroutine. It is now keyed on
+  a monotonic counter.
+
+The TFLite model was confirmed loading on-device from logcat
+(`Replacing 263 out of 264 node(s) with delegate`, matching the 264 operators in
+the bundled file), and the capture path correctly reports "No face in that photo"
+against the emulator's synthetic camera scene.
+
+**Not verified:** an actual positive face match, which needs a real camera
+pointed at a real face. The emulator's camera renders a synthetic test scene with
+no face in it.
+
+---
+
 ## Limitations
 
 These are real and I would rather name them than have them found.
@@ -313,10 +339,11 @@ These are real and I would rather name them than have them found.
    biometrics should add an encryption layer, and should have a retention and
    deletion policy behind it.
 
-8. **The instrumentation tests are a stub.** Unit tests cover matching, the
-   embedding codec and validation. The camera and face pipeline are not covered
-   by automated tests, because they need a device with a camera pointed at a
-   known face.
+8. **There are no instrumentation tests.** The 23 unit tests cover the matcher,
+   the embedding codec and form validation, which is where the logic that can be
+   tested off-device lives. The camera and face pipeline have none, because a
+   meaningful test needs a device with a camera pointed at a known face. They
+   were verified by hand instead, as described above.
 
 ---
 
