@@ -23,8 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PersonOff
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +40,50 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.yasharya.attendance.theme.AttendanceTheme
 import com.yasharya.attendance.theme.Spacing
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Surface
+
+/**
+ * The app's primary action, in one place.
+ *
+ * `heightIn` rather than `height`: at fontScale 2.0 a 20sp label plus content
+ * padding exactly fills 56dp with no slack, so a fixed height clips the label on
+ * every primary action in the app.
+ */
+@Composable
+fun PrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isBusy: Boolean = false,
+    leadingIcon: ImageVector? = null,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled && !isBusy,
+        shape = CircleShape,
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp),
+    ) {
+        if (isBusy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+        } else {
+            if (leadingIcon != null) {
+                Icon(leadingIcon, contentDescription = null)
+                Spacer(Modifier.width(Spacing.md))
+            }
+            Text(text, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
 
 /**
  * Enrolment state, shown asymmetrically on purpose: the exception is loud and
@@ -58,20 +100,24 @@ fun EnrolmentBadge(isEnrolled: Boolean, modifier: Modifier = Modifier) {
             modifier = modifier.size(20.dp),
         )
     } else {
-        AssistChip(
-            onClick = {},
-            enabled = false,
+        // A Surface, not a disabled AssistChip. Disabling an interactive
+        // component to borrow its looks lies to the accessibility tree: TalkBack
+        // announces a dimmed, unavailable button where there is only a label.
+        Surface(
             modifier = modifier,
-            label = { Text("Not enrolled") },
-            leadingIcon = {
-                Icon(Icons.Default.PersonOff, contentDescription = null, Modifier.size(18.dp))
-            },
-            colors = AssistChipDefaults.assistChipColors(
-                disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                disabledLeadingIconContentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-            ),
-        )
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = Spacing.md, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.PersonOff, contentDescription = null, Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Not enrolled", style = MaterialTheme.typography.labelMedium)
+            }
+        }
     }
 }
 
@@ -184,15 +230,21 @@ private fun ShimmerBar(brush: Brush, widthFraction: Float, height: Dp) {
     )
 }
 
+/**
+ * Section rhythm lives here, not at the call sites. It was 24dp on one screen
+ * and 32dp on another because each caller added its own Spacer.
+ */
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier.padding(horizontal = Spacing.gutter, vertical = Spacing.sm),
+        modifier = modifier.padding(
+            start = Spacing.gutter,
+            end = Spacing.gutter,
+            top = Spacing.xxxl,
+            bottom = Spacing.sm,
+        ),
     )
 }
-
-/** Transparent so it inherits whatever surface it is drawn on. */
-val TransparentContainer = Color.Transparent
