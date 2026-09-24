@@ -13,6 +13,9 @@ and a React Native (Expo) web build in `mobile/` that installs on an iPhone as a
 PWA. Both run the same MobileFaceNet file through the same alignment maths at
 the same threshold. See [Also runs on an iPhone](#also-runs-on-an-iphone).
 
+**Live:** [yash-salarybox.vercel.app](https://yash-salarybox.vercel.app). Open it
+in Safari on an iPhone and use Add to Home Screen.
+
 ---
 
 ## Demo
@@ -132,21 +135,50 @@ Then open the printed URL. `npm run build:web` produces a static `dist/`.
 
 ### Putting it on your phone
 
-The project is configured for Vercel (`mobile/vercel.json` sets the build, the
-output directory and the rewrites that the exported `[id].html` routes need).
-From `mobile/`:
+It is deployed at **[yash-salarybox.vercel.app](https://yash-salarybox.vercel.app)**,
+built by Vercel from `main` on every push with `mobile/` as the root directory.
+On the phone: open it in Safari, share sheet, Add to Home Screen. It installs
+with its own icon, runs without Safari's chrome, and asks for the camera the
+first time you mark attendance. Sign in as `admin` / `admin123` to enrol a face
+first; staff cannot mark attendance until they are enrolled.
 
-```bash
-npx vercel --prod
-```
-
-Or import the repository at vercel.com/new with **Root Directory** set to
-`mobile`. Then open the deployment on the phone, share sheet, Add to Home
-Screen. It installs with its own icon, runs without Safari's chrome, and asks
-for the camera the first time you mark attendance.
+To deploy your own copy, import the repository at vercel.com/new with **Root
+Directory** set to `mobile`, or run `npx vercel --prod` from `mobile/`.
+`mobile/vercel.json` sets the build command, the output directory, the
+single-page fallback to `index.html`, and the `application/wasm` content type.
 
 Any HTTPS host works. `getUserMedia` and WebCrypto both require a secure
 context, so plain `http://` over a LAN will not do.
+
+### The bug that only existed on Linux
+
+The first deployment built cleanly and then showed a blank page. The identical
+commit worked on the Windows machine it was written on. Three plausible fixes
+(an SPA export instead of pre-rendering, a NativeWind upgrade, a single bundle
+instead of code-split chunks) each addressed a real risk and none of them was
+the cause.
+
+What found it was a local Linux build, cloned into WSL's own filesystem rather
+than the Windows mount, whose output **hash matched the file Vercel was
+serving**. That turned a three-minute deploy per guess into a two-minute local
+loop, and made it possible to diff the two bundles module by module.
+
+The cause: react-native-css's Babel plugin, loaded through the `nativewind/babel`
+preset, rewrites imports inside react-native-web's **own** files to its
+className-aware wrappers. It decides whether a file belongs to react-native-web
+with `source.split("react-native-web/dist")`, which only matches forward-slash
+paths. On Windows the paths contain backslashes, the check never matches, and
+react-native-web is left alone. That is the only reason the local build worked.
+On Linux it matches, 27 of react-native-web's internal imports are rewired to
+wrappers that require react-native-web's export barrel back while it is still
+initialising, and the bundle contains 22 require cycles. The first to fire reads
+`FlatList` before it has been assigned.
+
+The fix is four lines in `mobile/babel.config.js`: the preset applies to
+everything except react-native-web. On Windows it is a provable no-op (the
+exported bundle hash does not change). On Linux the output now matches the
+Windows bundle module for module, so what is deployed is the code that was
+verified end to end.
 
 ### What is different from the Android build
 
