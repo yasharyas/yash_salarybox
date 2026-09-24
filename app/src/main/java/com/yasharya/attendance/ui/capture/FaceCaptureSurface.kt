@@ -89,6 +89,7 @@ import com.yasharya.attendance.face.PoseTarget
 import com.yasharya.attendance.theme.AttendanceTheme
 import com.yasharya.attendance.theme.Motion
 import com.yasharya.attendance.theme.Spacing
+import com.yasharya.attendance.ui.pixel.PixelScanLoader
 import kotlinx.coroutines.delay
 
 /** Oval geometry, shared by the scrim and by whatever has to sit clear of it. */
@@ -448,11 +449,10 @@ private fun GuidanceBlock(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (state == FaceCaptureState.Verifying) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.inverseOnSurface,
-                    )
+                    // A scanning face, not a generic ring. This is the one
+                    // wait in the app where the user knows precisely what is
+                    // being computed, so the loader may as well say it.
+                    PixelScanLoader(size = 56.dp)
                     Spacer(Modifier.height(Spacing.sm))
                 }
                 Text(

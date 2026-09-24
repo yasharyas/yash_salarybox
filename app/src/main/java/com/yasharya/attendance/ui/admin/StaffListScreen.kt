@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yasharya.attendance.data.local.dao.StaffWithEnrolment
 import com.yasharya.attendance.theme.Spacing
+import com.yasharya.attendance.ui.pixel.CLIPBOARD
 import com.yasharya.attendance.theme.TabularFigures
 import com.yasharya.attendance.ui.components.Avatar
 import com.yasharya.attendance.ui.components.EmptyState
@@ -106,6 +107,7 @@ fun StaffListScreen(
 
                 state.isEmpty -> EmptyState(
                     icon = Icons.Default.Group,
+                    sprite = CLIPBOARD,
                     title = "No staff yet",
                     description = "Add your first team member to start tracking attendance.",
                     actionLabel = "Add staff",

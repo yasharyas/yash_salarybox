@@ -24,6 +24,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import com.yasharya.attendance.data.local.entity.AttendanceEntity
 import com.yasharya.attendance.theme.Spacing
+import com.yasharya.attendance.ui.pixel.CLIPBOARD
 import com.yasharya.attendance.ui.components.EmptyState
 import com.yasharya.attendance.util.formatMonth
 
@@ -53,6 +54,7 @@ fun StaffHistoryScreen(
         if (records.isEmpty()) {
             EmptyState(
                 icon = Icons.Default.EventNote,
+                sprite = CLIPBOARD,
                 title = "No attendance yet",
                 // No action here on purpose: this empty state is temporary by
                 // nature and there is nothing to do from this screen.

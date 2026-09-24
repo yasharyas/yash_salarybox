@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -48,6 +46,9 @@ import com.yasharya.attendance.data.local.entity.AttendanceEntity
 import com.yasharya.attendance.data.local.entity.LocationStatus
 import com.yasharya.attendance.face.PoseTarget
 import com.yasharya.attendance.theme.AttendanceTheme
+import com.yasharya.attendance.ui.pixel.CHECK
+import com.yasharya.attendance.ui.pixel.CROSS
+import com.yasharya.attendance.ui.pixel.PixelSprite
 import com.yasharya.attendance.theme.Motion
 import com.yasharya.attendance.theme.Spacing
 import com.yasharya.attendance.ui.capture.FaceCaptureSurface
@@ -158,13 +159,13 @@ private fun SuccessScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            imageVector = Icons.Default.CheckCircle,
-            contentDescription = null,
-            tint = AttendanceTheme.status.present,
-            modifier = Modifier
-                .size(96.dp)
-                .scale(scale),
+        // Pixel art for the moment that matters. The scale animation is kept:
+        // the tick should land, not merely appear.
+        PixelSprite(
+            sprite = CHECK,
+            size = 104.dp,
+            modifier = Modifier.scale(scale),
+            label = "Attendance marked",
         )
         Spacer(Modifier.height(Spacing.xxl))
         Text(
@@ -230,12 +231,7 @@ private fun FailureSheet(
                     .windowInsetsPadding(WindowInsets.safeDrawing),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    Icons.Default.ErrorOutline,
-                    contentDescription = null,
-                    tint = accent,
-                    modifier = Modifier.size(40.dp),
-                )
+                PixelSprite(sprite = CROSS, size = 56.dp, label = null)
                 Spacer(Modifier.height(Spacing.lg))
                 Text(
                     text = title,

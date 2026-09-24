@@ -51,12 +51,15 @@ import com.yasharya.attendance.theme.AttendanceTheme
 import com.yasharya.attendance.theme.Spacing
 import com.yasharya.attendance.theme.TabularFigures
 import com.yasharya.attendance.ui.components.SectionHeader
+import com.yasharya.attendance.ui.pixel.PixelEmptyState
 import com.yasharya.attendance.util.formatDay
 import com.yasharya.attendance.util.formatDateTime
 import com.yasharya.attendance.util.formatTime
 import java.io.File
 import kotlin.math.roundToInt
 import com.yasharya.attendance.ui.components.Avatar
+import com.yasharya.attendance.ui.pixel.FACE_UNKNOWN
+import com.yasharya.attendance.ui.pixel.PixelSprite
 import com.yasharya.attendance.ui.components.PrimaryButton
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,15 +129,13 @@ fun StaffProfileScreen(
 
             if (state.history.isEmpty()) {
                 item {
-                    Text(
-                        text = if (state.isEnrolled) {
-                            "Nothing yet. Records appear here once ${staff?.name?.firstName().orEmpty()} marks attendance."
+                    PixelEmptyState(
+                        title = "Nothing recorded yet",
+                        body = if (state.isEnrolled) {
+                            "Records appear here once ${staff?.name?.firstName().orEmpty()} marks attendance."
                         } else {
-                            "Nothing yet, and nothing can be recorded until a face is enrolled."
+                            "Nothing can be recorded until a face is enrolled."
                         },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = Spacing.gutter, vertical = Spacing.lg),
                     )
                 }
             } else {
@@ -205,12 +206,7 @@ private fun EnrolmentHero(
         Column(Modifier.padding(Spacing.xxl)) {
             if (!isEnrolled) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.PersonOff,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                        modifier = Modifier.size(40.dp),
-                    )
+                    PixelSprite(sprite = FACE_UNKNOWN, size = 44.dp, label = null)
                     Spacer(Modifier.width(Spacing.lg))
                     Column {
                         Text(

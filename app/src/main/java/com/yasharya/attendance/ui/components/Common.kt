@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.yasharya.attendance.theme.AttendanceTheme
 import com.yasharya.attendance.theme.Spacing
+import com.yasharya.attendance.ui.pixel.PixelSprite
+import com.yasharya.attendance.ui.pixel.Sprite
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.CircularProgressIndicator
@@ -133,6 +135,14 @@ fun EmptyState(
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
+    /**
+     * When set, a pixel sprite is drawn instead of the Material icon.
+     *
+     * Optional rather than required so the two can coexist: the sprite set is
+     * deliberately small, and an empty state with no sprite of its own should
+     * fall back to an icon rather than borrow one that means something else.
+     */
+    sprite: Sprite? = null,
 ) {
     Column(
         modifier = modifier
@@ -148,12 +158,16 @@ fun EmptyState(
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(56.dp),
-            )
+            if (sprite != null) {
+                PixelSprite(sprite = sprite, size = 64.dp)
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(56.dp),
+                )
+            }
         }
         Spacer(Modifier.height(Spacing.xxl))
         Text(
