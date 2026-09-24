@@ -49,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -156,7 +157,11 @@ fun FaceCaptureSurface(
 
     var countdown by remember { mutableStateOf<Int?>(null) }
     var showManualShutter by remember { mutableStateOf(false) }
-    var shutterRequested by remember { mutableStateOf(false) }
+    // A monotonic counter, not a boolean flag. A flag that the effect resets
+    // changes its own key, which cancels the very coroutine doing the capture
+    // before it can finish. The counter only ever moves forward, so each tap is
+    // one new key and one uninterrupted capture.
+    var shutterTick by remember { mutableIntStateOf(0) }
 
     // A screen-reader user cannot see the framing, so auto-capture is replaced
     // by an always-available shutter rather than left as a race they cannot win.
@@ -241,7 +246,7 @@ fun FaceCaptureSurface(
                 // The click handler stays synchronous and flips a flag; the
                 // LaunchedEffect below owns the suspending capture, so it is
                 // cancelled cleanly if the screen goes away mid-capture.
-                onClick = { shutterRequested = true },
+                onClick = { shutterTick++ },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
@@ -260,9 +265,8 @@ fun FaceCaptureSurface(
         overlay()
     }
 
-    LaunchedEffect(shutterRequested) {
-        if (!shutterRequested) return@LaunchedEffect
-        shutterRequested = false
+    LaunchedEffect(shutterTick) {
+        if (shutterTick == 0) return@LaunchedEffect
         controller.setState(FaceCaptureState.Capturing)
         runCatching { controller.capture() }
             .onSuccess(onCaptured)
