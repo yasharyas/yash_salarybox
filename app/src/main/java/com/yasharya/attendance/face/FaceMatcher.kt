@@ -17,32 +17,40 @@ object FaceMatcher {
      * MEASURED, not guessed. FaceRecognitionAccuracyTest runs this exact pipeline
      * on-device over 8 photographs of 4 people and reports:
      *
-     *   genuine  (same person, 6 pairs) : min 0.854  mean 0.926  max 0.996
-     *   impostor (different people, 15) : min 0.569  mean 0.648  max 0.767
+     *   genuine  (same person, 6 pairs) : min 0.832  mean 0.914  max 0.998
+     *   impostor (different people, 15) : min -0.282 mean -0.020 max 0.121
      *
-     * The distributions separate with a gap of 0.087, so any threshold inside
-     * (0.767, 0.854) classifies every measured pair correctly. 0.80 sits in that
-     * gap with room on both sides.
+     * Different people land near orthogonal, which is what a correctly aligned
+     * face embedding should do. The gap is 0.711 wide, so the choice is not
+     * delicate. 0.55 sits slightly above the midpoint, leaving 0.28 of headroom
+     * for genuine faces degraded by real-world light and pose, and 0.43 before
+     * any impostor here would be accepted.
      *
-     * The first version of this constant was 0.65, carried over from published
-     * defaults for this architecture. That value sits INSIDE the impostor
-     * distribution: it would have accepted all fifteen impostor pairs, including
-     * two different people scoring 0.767. The feature would have appeared to
-     * work in a demo and been worthless as a control. It took measuring to see
-     * that, which is the entire argument for the test being in the repo.
+     * This constant has been wrong twice, and both stories are worth keeping:
      *
-     * Caveats, stated because the sample is small:
-     *   - 4 identities and 21 pairs. Both tails will widen with more data and
-     *     the gap will narrow.
-     *   - Real check-in selfies vary more than these curated photographs, so
-     *     production genuine scores will run lower than 0.854.
-     *   - A false accept (someone marking attendance as a colleague) is worse
-     *     than a false reject (a retry), so err upward rather than downward.
+     *  1. It started at 0.65, taken from published defaults for this
+     *     architecture. Measurement showed 0.65 sat INSIDE the impostor
+     *     distribution of the day: it would have accepted all fifteen impostor
+     *     pairs. A demo only ever exercises the true-accept case, so this would
+     *     have shipped looking perfect.
+     *
+     *  2. It was then set to 0.80, correctly, for a pipeline that was quietly
+     *     feeding the model upside-down crops (see FaceAligner: the eye
+     *     landmarks were swapped). Fixing that collapsed impostor scores from a
+     *     0.65 mean to roughly zero and made 0.80 needlessly strict, leaving
+     *     only 0.03 of genuine headroom.
+     *
+     * The lesson in both is the same: a threshold is a property of the whole
+     * pipeline, not a constant you can look up. Change anything upstream of it
+     * and it has to be re-measured, which is why the measurement is a test.
+     *
+     * Remaining caveat: 4 identities and 21 pairs is a small sample, and real
+     * check-in selfies vary more than curated photographs.
      *
      * The value in force is written onto every attendance record, so changing
      * this constant later cannot retroactively rewrite what past decisions meant.
      */
-    const val DEFAULT_THRESHOLD = 0.80f
+    const val DEFAULT_THRESHOLD = 0.55f
 
     /** Both vectors must be unit-norm; [l2Normalize] guarantees that. */
     fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
