@@ -136,6 +136,74 @@ class FaceRecognitionAccuracyTest {
         assertTrue("A different person was accepted", !impostor.matched)
     }
 
+    /**
+     * Alignment has to put the eyes where the template says, or every embedding
+     * is computed on a differently-posed face than the model was trained on.
+     *
+     * This is checked by re-detecting on the ALIGNED crop: if the transform is
+     * right, the eyes land within a few pixels of the ArcFace template points.
+     * Nothing else in the pipeline fails loudly when this is wrong, because a
+     * consistently wrong alignment still self-matches.
+     */
+    @Test
+    fun alignedCropPutsEyesOnTheTemplate() = runBlocking {
+        val source = loadFixture("obama.jpg")
+        val faces = detectOn(source)
+        assertEquals(1, faces.size)
+        val face = faces.first()
+
+        val subjectLeft = face.getLandmark(com.google.mlkit.vision.face.FaceLandmark.LEFT_EYE)!!.position
+        val subjectRight = face.getLandmark(com.google.mlkit.vision.face.FaceLandmark.RIGHT_EYE)!!.position
+        log("ML Kit LEFT_EYE  x=%.1f y=%.1f".format(subjectLeft.x, subjectLeft.y))
+        log("ML Kit RIGHT_EYE x=%.1f y=%.1f".format(subjectRight.x, subjectRight.y))
+        log("=> the eye ML Kit calls LEFT is on the %s of the image"
+            .format(if (subjectLeft.x < subjectRight.x) "LEFT" else "RIGHT"))
+
+        val aligned = FaceAligner.align(source, face)
+            ?: throw AssertionError("Alignment returned null")
+        assertEquals(FaceAligner.OUTPUT_SIZE, aligned.width)
+
+        val alignedFaces = detectOn(aligned)
+        assertTrue("No face found in the aligned crop", alignedFaces.isNotEmpty())
+        val alignedFace = alignedFaces.first()
+        val eyeA = alignedFace.getLandmark(com.google.mlkit.vision.face.FaceLandmark.LEFT_EYE)?.position
+        val eyeB = alignedFace.getLandmark(com.google.mlkit.vision.face.FaceLandmark.RIGHT_EYE)?.position
+            ?: throw AssertionError("No eye landmarks in the aligned crop")
+
+        val imageLeft = if ((eyeA?.x ?: Float.MAX_VALUE) < eyeB.x) eyeA!! else eyeB
+        val imageRight = if ((eyeA?.x ?: Float.MAX_VALUE) < eyeB.x) eyeB else eyeA!!
+        log("aligned eyes: left=(%.1f, %.1f) right=(%.1f, %.1f), template expects (38.3, 51.7) and (73.5, 51.5)"
+            .format(imageLeft.x, imageLeft.y, imageRight.x, imageRight.y))
+
+        val tolerance = 8f
+        assertTrue(
+            "Aligned image-left eye at (%.1f, %.1f) is not near the template point (38.3, 51.7). " +
+                "A large y error means the crop is upside down."
+                .format(imageLeft.x, imageLeft.y),
+            kotlin.math.abs(imageLeft.x - 38.3f) < tolerance &&
+                kotlin.math.abs(imageLeft.y - 51.7f) < tolerance,
+        )
+        assertTrue(
+            "Aligned image-right eye at (%.1f, %.1f) is not near the template point (73.5, 51.5)"
+                .format(imageRight.x, imageRight.y),
+            kotlin.math.abs(imageRight.x - 73.5f) < tolerance &&
+                kotlin.math.abs(imageRight.y - 51.5f) < tolerance,
+        )
+    }
+
+    private suspend fun detectOn(bitmap: Bitmap): List<com.google.mlkit.vision.face.Face> =
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            val detector = com.google.mlkit.vision.face.FaceDetection.getClient(
+                com.google.mlkit.vision.face.FaceDetectorOptions.Builder()
+                    .setPerformanceMode(com.google.mlkit.vision.face.FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+                    .setLandmarkMode(com.google.mlkit.vision.face.FaceDetectorOptions.LANDMARK_MODE_ALL)
+                    .build(),
+            )
+            detector.process(com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0))
+                .addOnSuccessListener { if (cont.isActive) cont.resume(it) {} }
+                .addOnFailureListener { if (cont.isActive) cont.resume(emptyList()) {} }
+        }
+
     @Test
     fun multipleFacesAreRejectedRatherThanGuessed() = runBlocking {
         // Accepting whichever face happened to be largest would let someone mark

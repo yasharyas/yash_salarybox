@@ -29,8 +29,8 @@ object FaceAligner {
 
     const val OUTPUT_SIZE = 112
 
-    // ArcFace canonical five-point template, 112x112. Only the eyes are used here.
-    // Index 0 is the eye that appears on the LEFT of the image.
+    // ArcFace canonical five-point template, 112x112. Only the eyes are used
+    // here, and both are in IMAGE coordinates: index 0 is the eye nearer x=0.
     private val TEMPLATE_EYE_IMAGE_LEFT = floatArrayOf(38.2946f, 51.6963f)
     private val TEMPLATE_EYE_IMAGE_RIGHT = floatArrayOf(73.5318f, 51.5014f)
 
@@ -44,11 +44,19 @@ object FaceAligner {
      * @return a 112x112 aligned crop, or null if the landmarks were not usable.
      */
     fun align(source: Bitmap, face: Face): Bitmap? {
-        // ML Kit names landmarks from the SUBJECT'S point of view, so the
-        // subject's right eye is the one on the left of the image. Getting this
-        // backwards mirrors every crop and quietly halves accuracy.
-        val imageLeftEye = face.getLandmark(FaceLandmark.RIGHT_EYE)?.position ?: return null
-        val imageRightEye = face.getLandmark(FaceLandmark.LEFT_EYE)?.position ?: return null
+        // ML Kit names eye landmarks from the IMAGE point of view: LEFT_EYE is
+        // the eye nearer x=0, not the subject's own left eye. Verified by
+        // measurement, not by documentation: on the test fixtures LEFT_EYE sits
+        // at x=443.9 and RIGHT_EYE at x=552.2.
+        //
+        // Swapping these does not throw and does not look broken in code. It
+        // rotates every crop by roughly 180 degrees, and because BOTH enrolment
+        // and verification go through this same function, matching still
+        // self-consistently works while feeding the model upside-down faces it
+        // was never trained on. alignedCropPutsEyesOnTheTemplate is the test
+        // that catches it.
+        val imageLeftEye = face.getLandmark(FaceLandmark.LEFT_EYE)?.position ?: return null
+        val imageRightEye = face.getLandmark(FaceLandmark.RIGHT_EYE)?.position ?: return null
 
         val sourceDx = imageRightEye.x - imageLeftEye.x
         val sourceDy = imageRightEye.y - imageLeftEye.y
