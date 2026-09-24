@@ -3,13 +3,7 @@
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "dist",
   "framework": null,
-  "rewrites": [
-    {
-      "comment": "Single-page export: every route is served by the same document and resolved client side. Vercel checks the filesystem before rewrites, so real files (the model, the wasm, the icons, the hashed bundles) are served directly and only unmatched paths fall through to here.",
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ],
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
   "headers": [
     {
       "source": "/(.*).wasm",

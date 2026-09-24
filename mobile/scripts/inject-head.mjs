@@ -15,6 +15,12 @@
  *
  * An SPA export plus this script gives the same head, deterministically, with
  * no Node-side rendering to go wrong.
+ *
+ * The matching half of this lives in vercel.json, which falls every unmatched
+ * path back to index.html so client-side routes survive a refresh or a shared
+ * link. It carries no explanatory comment because vercel.json is validated
+ * against a strict schema that rejects unknown properties, including a
+ * "comment" key inside a rewrite. That mistake cost one deployment.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
