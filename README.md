@@ -10,6 +10,42 @@ and no face data leaves the phone.
 
 ---
 
+## Demo
+
+### Marking attendance with a face match
+
+The quality gates pass, auto-capture counts down, the selfie is matched against
+the enrolled templates, and the record is written. This is the real pipeline:
+ML Kit detection, eye alignment, MobileFaceNet, cosine match. **This attempt
+scored 0.9933 against a 0.55 threshold.**
+
+<img src="docs/media/mark-attendance.gif" width="300" alt="Staff member marks attendance: the oval turns green, a three second countdown runs, the app says Checking it is you, then Attendance marked at 4:45 PM" />
+
+### The admin side
+
+Staff list showing who still needs enrolling, then a profile with the three
+enrolment crops, the attendance history, and the match confidence for each
+record.
+
+<img src="docs/media/admin-review.gif" width="300" alt="Admin opens a staff profile showing three enrolled face crops, Face enrolled, and an attendance record at 99 percent match" />
+
+### Adding a staff member
+
+Validation is late-then-early: nothing is judged until a field loses focus, and
+once an error has shown it clears on the keystroke that fixes it. A duplicate
+employee ID names whoever already holds it.
+
+<img src="docs/media/add-staff.gif" width="300" alt="Add staff form: typing EMP-001 shows the error EMP-001 is already used by Priya Sharma, and changing it to EMP-004 shows a green tick and enables the save buttons" />
+
+> **About the face in these recordings.** No real device was available, so these
+> are Android 16 emulator captures with a **photograph** fed to the emulator's
+> virtual front camera (`-camera-front imagefile:`). It is the standard
+> `ageitgey/face_recognition` test fixture, not a live person and not a webcam.
+> The detection, alignment, embedding and matching are genuinely running; only
+> the light hitting the lens is synthetic.
+
+---
+
 ## Demo credentials
 
 | Role  | Username  | Password   |
@@ -93,7 +129,7 @@ behind separate interfaces.
    NHWC, and run through MobileFaceNet to get a 192-d vector.
 
 6. **Matching.** Cosine similarity against the stored templates, accepting at
-   **0.80** or above. Where that number comes from is below, and it is measured.
+   **0.55** or above. Where that number comes from is below, and it is measured.
 
 ### The model
 
@@ -166,29 +202,38 @@ photographs of 4 people and reports every pairwise score:
 
 | | pairs | min | mean | max |
 |---|---|---|---|---|
-| **Genuine** (same person) | 6 | **0.854** | 0.926 | 0.996 |
-| **Impostor** (different people) | 15 | 0.569 | 0.648 | **0.767** |
+| **Genuine** (same person) | 6 | **0.832** | 0.914 | 0.998 |
+| **Impostor** (different people) | 15 | -0.282 | -0.020 | **0.121** |
 
-The distributions separate with a gap of **0.087**, so any threshold inside
-(0.767, 0.854) classifies every measured pair correctly. The constant is **0.80**.
+Different people land near orthogonal, which is what correctly aligned face
+embeddings should do. The gap is **0.711** wide, so the choice is not delicate.
+The constant is **0.55**: 0.28 of headroom for genuine faces degraded by real
+light and pose, and 0.43 before any impostor here would be accepted.
 
-**The first version of this constant was 0.65**, carried over from published
-defaults for this architecture. Look at where that falls: 0.65 sits *inside the
-impostor distribution*. It would have accepted **all fifteen impostor pairs**,
-including two different people scoring 0.767. The feature would have demoed
-perfectly and been worthless as an actual control, because a demo only ever shows
-you the true-accept case.
+**This constant has been wrong twice, and both stories are worth keeping.**
 
-It took running the pipeline against real faces to see that, which is the whole
-argument for the test being in the repo rather than a number in a comment.
+It started at **0.65**, carried over from published defaults for the
+architecture. Measurement showed 0.65 sat *inside the impostor distribution of
+the day*: it would have accepted **all fifteen impostor pairs**. The feature
+would have demoed perfectly and been worthless as a control, because a demo only
+ever exercises the true-accept case.
+
+It was then set to **0.80**, correctly, for a pipeline that was quietly feeding
+the model upside-down crops. Fixing the alignment collapsed impostor scores from
+a 0.65 mean to roughly zero and made 0.80 needlessly strict, leaving only 0.03 of
+genuine headroom.
+
+The lesson in both is the same: a threshold is a property of the whole pipeline,
+not a number you can look up. Change anything upstream and it has to be
+re-measured, which is exactly why the measurement is a test and not a comment.
 
 Caveats, because the sample is small:
 
-- 4 identities, 21 pairs. Both tails widen with more data and the gap narrows.
+- 4 identities, 21 pairs. Both tails widen with more data.
 - Real check-in selfies vary more than curated photographs, so production genuine
-  scores will run lower than 0.854.
+  scores will run lower than 0.832.
 - A false accept (marking attendance as a colleague) is worse than a false reject
-  (a retry), so the bias should be upward, and the UI gives three graceful retries.
+  (a retry), so the bias is upward, and the UI gives three graceful retries.
 
 Supporting decisions that survive any threshold change:
 
@@ -197,7 +242,7 @@ Supporting decisions that survive any threshold change:
   later cannot retroactively rewrite what past decisions meant
 - the achieved score is stored and shown to the admin, so drift is visible
 - the test asserts the constant still sits in the measured gap, so a future edit
-  that reintroduces the 0.65 mistake fails CI
+  that reintroduces either mistake fails CI
 
 One further measurement worth recording: two images of pure random noise score
 **0.91** against each other. Noise is far outside the model's training
@@ -346,7 +391,8 @@ Run the tests:
 Not just "it compiles". The app was installed on an Android 16 (API 36) emulator
 and driven through sign-in, the admin staff list, a staff profile, the enrolment
 intro, the live camera screen and the staff home, checking logcat for crashes at
-each step. Five real bugs came out of that and are fixed:
+each step, and later driven with a face in front of the virtual camera.
+Seven real bugs came out of that and are fixed:
 
 - **Sign-in rejected valid credentials on a fresh install.** Demo seeding ran
   from a Room `onCreate` callback, which fires part-way through the first
@@ -366,6 +412,20 @@ each step. Five real bugs came out of that and are fixed:
   re-ran on every configuration change and popped the whole back stack, so
   rotating during enrolment discarded the photos taken so far. It now navigates
   only on a genuine role change.
+- **Auto-capture cancelled its own photo.** Taking the picture inside the
+  countdown's `LaunchedEffect` could not work: the first thing a capture does is
+  move the state to `Capturing`, which made the effect's key false and cancelled
+  the coroutine mid-capture. The symptom was a countdown that looped forever and
+  a silent `LeftCompositionCancellationException`. Both capture paths now run off
+  one monotonic counter that nothing about the state can invalidate.
+- **The countdown ran twice for one capture.** Analyser frames arriving while the
+  photo was being matched still published `Ready`, so a second countdown started
+  behind the first. The controller now latches until the screen asks for a new
+  attempt.
+
+The last two were only findable because the failure path got a log line. It had
+been `runCatching { ... }.onFailure { setState(CameraError) }`, which turned every
+cause into the same unactionable "Camera unavailable".
 
 The TFLite model was confirmed loading on-device from logcat
 (`Replacing 263 out of 264 node(s) with delegate`, matching the 264 operators in
@@ -412,9 +472,9 @@ These are real and I would rather name them than have them found.
    accidental cases but not a deliberate one. Real anti-spoofing needs either a
    dedicated model or an active challenge, and is a project of its own.
 
-2. **The threshold is calibrated on 4 identities, not a population.** 0.80 sits
-   in a measured gap, but 21 pairs is a small sample and real check-in selfies
-   vary more than curated photographs. See the threshold section above.
+2. **The threshold is calibrated on 4 identities, not a population.** 0.55 sits
+   in a wide measured gap, but 21 pairs is a small sample and real check-in
+   selfies vary more than curated photographs. See the threshold section above.
 
 3. **One record per day, check-in only.** No check-out, no hours, no late
    classification. The status token set has `late` in it and nothing sets it yet.
