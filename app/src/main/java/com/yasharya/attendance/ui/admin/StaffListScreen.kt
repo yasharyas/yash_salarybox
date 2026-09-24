@@ -28,9 +28,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -52,11 +54,14 @@ fun StaffListScreen(
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text("Staff") },
+                scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = onSignOut) {
                         Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Sign out")
@@ -124,6 +129,28 @@ fun StaffListScreen(
                 }
 
                 else -> LazyColumn(contentPadding = PaddingValues(bottom = 88.dp)) {
+                    // The admin's actual job on this screen is "who still needs
+                    // enrolling". The list showed names and chips but gave no
+                    // sense of scale or of how much work was left.
+                    item(key = "summary") {
+                        val notEnrolled = state.staff.count { it.sampleCount == 0 }
+                        Text(
+                            text = buildString {
+                                append("${state.staff.size} staff")
+                                if (notEnrolled > 0) append("  ·  $notEnrolled not enrolled")
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (notEnrolled > 0) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(
+                                horizontal = Spacing.gutter,
+                                vertical = Spacing.sm,
+                            ),
+                        )
+                    }
                     items(state.staff, key = { it.staff.id }) { entry ->
                         StaffRow(entry = entry, onClick = { onStaffClick(entry.staff.id) })
                         HorizontalDivider(

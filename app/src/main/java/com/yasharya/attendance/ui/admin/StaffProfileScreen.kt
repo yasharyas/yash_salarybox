@@ -56,6 +56,8 @@ import com.yasharya.attendance.util.formatDateTime
 import com.yasharya.attendance.util.formatTime
 import java.io.File
 import kotlin.math.roundToInt
+import com.yasharya.attendance.ui.components.Avatar
+import com.yasharya.attendance.ui.components.PrimaryButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,13 +96,19 @@ fun StaffProfileScreen(
             contentPadding = PaddingValues(bottom = Spacing.huge),
         ) {
             item {
-                Text(
-                    text = staff?.employeeId.orEmpty(),
-                    style = MaterialTheme.typography.bodyMedium.merge(TabularFigures),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Row(
                     modifier = Modifier.padding(horizontal = Spacing.gutter),
-                )
-                Spacer(Modifier.height(Spacing.lg))
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Avatar(name = staff?.name.orEmpty(), size = 40.dp)
+                    Spacer(Modifier.width(Spacing.md))
+                    Text(
+                        text = staff?.employeeId.orEmpty(),
+                        style = MaterialTheme.typography.bodyLarge.merge(TabularFigures),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(Spacing.xl))
             }
 
             item {
@@ -114,15 +122,16 @@ fun StaffProfileScreen(
                 )
             }
 
-            item {
-                Spacer(Modifier.height(Spacing.xxl))
-                SectionHeader("Attendance history")
-            }
+            item { SectionHeader("Attendance history") }
 
             if (state.history.isEmpty()) {
                 item {
                     Text(
-                        text = "No attendance recorded yet.",
+                        text = if (state.isEnrolled) {
+                            "Nothing yet. Records appear here once ${staff?.name?.firstName().orEmpty()} marks attendance."
+                        } else {
+                            "Nothing yet, and nothing can be recorded until a face is enrolled."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = Spacing.gutter, vertical = Spacing.lg),
@@ -187,13 +196,13 @@ private fun EnrolmentHero(
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(
             containerColor = if (isEnrolled) {
-                MaterialTheme.colorScheme.surfaceContainerLow
+                MaterialTheme.colorScheme.surfaceContainer
             } else {
                 MaterialTheme.colorScheme.tertiaryContainer
             },
         ),
     ) {
-        Column(Modifier.padding(Spacing.xl)) {
+        Column(Modifier.padding(Spacing.xxl)) {
             if (!isEnrolled) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -218,9 +227,7 @@ private fun EnrolmentHero(
                     }
                 }
                 Spacer(Modifier.height(Spacing.lg))
-                Button(onClick = onEnrol, modifier = Modifier.fillMaxWidth()) {
-                    Text("Enrol face now")
-                }
+                PrimaryButton(text = "Enrol face now", onClick = onEnrol)
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     templates.forEach { template ->
