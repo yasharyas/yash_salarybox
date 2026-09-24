@@ -92,7 +92,7 @@ behind separate interfaces.
    NHWC, and run through MobileFaceNet to get a 192-d vector.
 
 6. **Matching.** Cosine similarity against the stored templates, accepting at
-   **0.65** or above.
+   **0.80** or above. Where that number comes from is below, and it is measured.
 
 ### The model
 
@@ -110,7 +110,7 @@ running it rather than assumed:
 
 That last point matters. Several widely mirrored MobileFaceNet exports disagree
 with each other: some are compiled with a fixed batch of 2, some emit
-un-normalised vectors with norms around 32. Against one of those, a 0.65
+un-normalised vectors with norms around 32. Against one of those, a cosine
 threshold would pass everything. So the code reads the tensor shapes from the
 model at load time instead of hardcoding them, and normalises defensively even
 though this file does not need it.
@@ -128,27 +128,52 @@ They are stored **separately and matched on the best score**, not averaged. The
 mean of several poses lands in a region that represents none of them; "closest to
 any pose I have seen you in" is both more accurate and easier to reason about.
 
-### Where 0.65 came from, and its honest status
+### The threshold, and why measuring it mattered
 
-Unit vectors make cosine similarity a plain dot product in `[-1, 1]`. 0.65 sits
-above the published operating points for this architecture with headroom for the
-lighting and pose spread a phone camera in an office produces.
+`FaceRecognitionAccuracyTest` runs this exact pipeline on-device over 8
+photographs of 4 people and reports every pairwise score:
 
-**It is a defensible default, not a measured one.** Calibrating it properly means
-collecting genuine and impostor pairs on real devices and picking the middle of
-the observed gap. I did not have a face dataset to do that with, so instead:
+| | pairs | min | mean | max |
+|---|---|---|---|---|
+| **Genuine** (same person) | 6 | **0.854** | 0.926 | 0.996 |
+| **Impostor** (different people) | 15 | 0.569 | 0.648 | **0.767** |
 
-- the threshold is a single named constant, `FaceMatcher.DEFAULT_THRESHOLD`
+The distributions separate with a gap of **0.087**, so any threshold inside
+(0.767, 0.854) classifies every measured pair correctly. The constant is **0.80**.
+
+**The first version of this constant was 0.65**, carried over from published
+defaults for this architecture. Look at where that falls: 0.65 sits *inside the
+impostor distribution*. It would have accepted **all fifteen impostor pairs**,
+including two different people scoring 0.767. The feature would have demoed
+perfectly and been worthless as an actual control, because a demo only ever shows
+you the true-accept case.
+
+It took running the pipeline against real faces to see that, which is the whole
+argument for the test being in the repo rather than a number in a comment.
+
+Caveats, because the sample is small:
+
+- 4 identities, 21 pairs. Both tails widen with more data and the gap narrows.
+- Real check-in selfies vary more than curated photographs, so production genuine
+  scores will run lower than 0.854.
+- A false accept (marking attendance as a colleague) is worse than a false reject
+  (a retry), so the bias should be upward, and the UI gives three graceful retries.
+
+Supporting decisions that survive any threshold change:
+
+- it is one named constant, `FaceMatcher.DEFAULT_THRESHOLD`
 - the value in force is **written onto every attendance record**, so changing it
   later cannot retroactively rewrite what past decisions meant
 - the achieved score is stored and shown to the admin, so drift is visible
+- the test asserts the constant still sits in the measured gap, so a future edit
+  that reintroduces the 0.65 mistake fails CI
 
-One measurement I did make is worth recording: two images of pure random noise
-score **0.91** against each other. Noise is far outside the model's training
-distribution and collapses to a similar region of the embedding space. The
-practical consequence is that **the quality gates are load-bearing for security,
-not just for usability.** Without "is this actually a face, in focus, facing the
-camera", the matcher is much weaker than the threshold suggests.
+One further measurement worth recording: two images of pure random noise score
+**0.91** against each other. Noise is far outside the model's training
+distribution and collapses to a similar region of the embedding space. So **the
+quality gates are load-bearing for security, not just usability.** Without "is
+this actually a face, in focus, facing the camera", the matcher is much weaker
+than any threshold suggests.
 
 ---
 
@@ -305,9 +330,34 @@ The TFLite model was confirmed loading on-device from logcat
 the bundled file), and the capture path correctly reports "No face in that photo"
 against the emulator's synthetic camera scene.
 
-**Not verified:** an actual positive face match, which needs a real camera
-pointed at a real face. The emulator's camera renders a synthetic test scene with
-no face in it.
+### Face matching is verified, with real faces
+
+The emulator's camera renders a synthetic scene with no face in it, so pointing
+the app at it proves nothing about matching. Instead the pipeline is driven
+directly by instrumentation tests over real photographs, which is both stronger
+and reproducible. `EnrolAndMarkAttendanceTest` goes through the real
+repositories:
+
+- enrol a person from **three** photographs, then mark attendance with a
+  **fourth photograph the system has never seen** → accepted at **0.9962**, with
+  the selfie written to disk, the timestamp recorded, and the location status
+  correctly stored as `PERMISSION_DENIED` rather than a silent null
+- attempt the same as a **different person** → rejected at **0.7240**, and
+  nothing is written: no orphan selfie, no partial row
+- an unenrolled staff member → `NotEnrolled`, not a mismatch
+- a second attempt the same day → `AlreadyMarkedToday`
+- a photograph containing **two faces** → rejected rather than guessing the
+  largest, which would let someone mark attendance standing next to a colleague
+
+Run them yourself against a connected device or emulator:
+
+```bash
+./gradlew connectedDebugAndroidTest
+```
+
+**Still not verified:** the live camera path end to end with a real face in
+front of a real lens, which needs hardware. Everything behind the shutter, which
+is where the matching actually happens, is covered above.
 
 ---
 
@@ -320,7 +370,9 @@ These are real and I would rather name them than have them found.
    accidental cases but not a deliberate one. Real anti-spoofing needs either a
    dedicated model or an active challenge, and is a project of its own.
 
-2. **The threshold is a default, not a calibration.** See above.
+2. **The threshold is calibrated on 4 identities, not a population.** 0.80 sits
+   in a measured gap, but 21 pairs is a small sample and real check-in selfies
+   vary more than curated photographs. See the threshold section above.
 
 3. **One record per day, check-in only.** No check-out, no hours, no late
    classification. The status token set has `late` in it and nothing sets it yet.
@@ -339,11 +391,12 @@ These are real and I would rather name them than have them found.
    biometrics should add an encryption layer, and should have a retention and
    deletion policy behind it.
 
-8. **There are no instrumentation tests.** The 23 unit tests cover the matcher,
-   the embedding codec and form validation, which is where the logic that can be
-   tested off-device lives. The camera and face pipeline have none, because a
-   meaningful test needs a device with a camera pointed at a known face. They
-   were verified by hand instead, as described above.
+8. **The live camera path has no automated test.** 23 unit tests cover the
+   matcher, embedding codec and validation; 8 instrumentation tests cover
+   detection, alignment, embedding, matching and the full enrol-then-mark
+   journey. What is not covered is CameraX itself: the viewfinder, the quality
+   gates against a live stream, and auto-capture. Those were driven by hand on
+   an emulator, as described above.
 
 ---
 
