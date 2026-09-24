@@ -41,7 +41,9 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-title" content="Attendance" />
         <meta name="mobile-web-app-capable" content="yes" />
         <link rel="manifest" href="/manifest.webmanifest" />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        {/* iOS ignores the manifest icons for the home screen and reads this. */}
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
 
         <ScrollViewStyleReset />
         <script type="module" dangerouslySetInnerHTML={{ __html: BOOT_MEDIAPIPE }} />
