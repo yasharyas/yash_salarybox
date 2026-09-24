@@ -51,8 +51,8 @@
     "web": "npm run sync-assets && expo start --web",
     "lint": "tsc --noEmit",
     "sync-assets": "node scripts/sync-assets.mjs",
-    "build:web": "npm run sync-assets && expo export -p web",
-    "vercel-build": "npm run sync-assets && expo export -p web"
+    "build:web": "npm run sync-assets && expo export -p web && node scripts/inject-head.mjs",
+    "vercel-build": "npm run sync-assets && expo export -p web && node scripts/inject-head.mjs"
   },
   "private": true,
   "overrides": {
