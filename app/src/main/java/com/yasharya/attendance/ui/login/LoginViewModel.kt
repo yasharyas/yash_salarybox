@@ -16,8 +16,11 @@ data class LoginUiState(
     val isSubmitting: Boolean = false,
     val error: String? = null,
 ) {
+    val hasCredentials: Boolean
+        get() = username.isNotBlank() && password.isNotBlank()
+
     val canSubmit: Boolean
-        get() = !isSubmitting && username.isNotBlank() && password.isNotBlank()
+        get() = !isSubmitting && hasCredentials
 }
 
 class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
@@ -33,7 +36,14 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
 
     fun signIn() {
         val current = _state.value
-        if (!current.canSubmit) return
+        if (current.isSubmitting) return
+
+        // The button stays enabled on an empty form so that tapping it says
+        // something. A disabled control explains nothing.
+        if (!current.hasCredentials) {
+            _state.update { it.copy(error = "Enter your username and password.") }
+            return
+        }
 
         _state.update { it.copy(isSubmitting = true, error = null) }
         viewModelScope.launch {
@@ -46,8 +56,12 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
                 SignInResult.InvalidCredentials -> _state.update {
                     it.copy(
                         isSubmitting = false,
-                        // Deliberately does not say which of the two was wrong.
-                        error = "That username and password do not match.",
+                        // Deliberately does not say which of the two was wrong:
+                        // distinguishing them turns this screen into a tool for
+                        // discovering which employee IDs exist. It does point at
+                        // the password, because that is the field now empty and
+                        // the one the user has to act on.
+                        error = "We could not sign you in. Check the password and try again.",
                         password = "",
                     )
                 }
