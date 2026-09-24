@@ -18,3 +18,9 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+
+# Expo / React Native
+mobile/node_modules/
+mobile/dist/
+mobile/dist-smoke/
+mobile/.expo/
