@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LocationOff
+import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
@@ -41,6 +42,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yasharya.attendance.data.local.entity.AttendanceEntity
@@ -74,11 +77,17 @@ fun StaffHomeScreen(
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // background and surface are the same hex in the Harbour palette, so an
+    // unscrolled bar is pixel-identical to the body behind it. Scroll behaviour
+    // is what gives it a surfaceContainer state and a visible boundary.
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text("Attendance") },
+                scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = onSignOut) {
                         Icon(
@@ -104,34 +113,60 @@ fun StaffHomeScreen(
                     )
                     Spacer(Modifier.height(Spacing.xs))
                     Text(
-                        text = System.currentTimeMillis().formatFullDay(),
+                        text = buildString {
+                            append(System.currentTimeMillis().formatFullDay())
+                            // presentThisMonth was being computed on every
+                            // emission and read by nobody. Staff had no view of
+                            // their own record beyond five rows.
+                            if (state.presentThisMonth > 0) {
+                                append("  ·  ")
+                                append("${state.presentThisMonth} marked this month")
+                            }
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            item {
-                TodayStatusCard(
-                    record = state.todayRecord,
-                    modifier = Modifier.padding(horizontal = Spacing.gutter),
-                )
-            }
-
-            item {
-                Spacer(Modifier.height(Spacing.xxl))
-                PrimaryActionBlock(
-                    state = state,
-                    onMarkAttendance = onMarkAttendance,
-                    modifier = Modifier.padding(horizontal = Spacing.gutter),
-                )
+            // When the user is blocked, the thing blocking them leads. Otherwise
+            // today's status is the answer they came for and leads instead.
+            if (state.action == PrimaryAction.NotEnrolled) {
+                item {
+                    PrimaryActionBlock(
+                        state = state,
+                        onMarkAttendance = onMarkAttendance,
+                        onViewAll = onViewAll,
+                        modifier = Modifier.padding(horizontal = Spacing.gutter),
+                    )
+                }
+                item {
+                    Spacer(Modifier.height(Spacing.xxl))
+                    TodayStatusCard(
+                        record = state.todayRecord,
+                        modifier = Modifier.padding(horizontal = Spacing.gutter),
+                    )
+                }
+            } else {
+                item {
+                    TodayStatusCard(
+                        record = state.todayRecord,
+                        modifier = Modifier.padding(horizontal = Spacing.gutter),
+                    )
+                }
+                item {
+                    Spacer(Modifier.height(Spacing.xxl))
+                    PrimaryActionBlock(
+                        state = state,
+                        onMarkAttendance = onMarkAttendance,
+                        onViewAll = onViewAll,
+                        modifier = Modifier.padding(horizontal = Spacing.gutter),
+                    )
+                }
             }
 
             if (state.recent.isNotEmpty()) {
-                item {
-                    Spacer(Modifier.height(Spacing.xxxl))
-                    SectionHeader("Recent")
-                }
+                item { SectionHeader("Recent") }
                 items(state.recent, key = { it.id }) { record ->
                     AttendanceRow(record)
                 }
@@ -160,7 +195,11 @@ private fun TodayStatusCard(record: AttendanceEntity?, modifier: Modifier = Modi
         targetValue = if (record != null) {
             status.presentContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            // secondaryContainer, not surfaceContainerHigh. This card exists to
+            // carry state in its colour, and a 3% luminance step over the page
+            // background carried none. Secondary is in the Harbour family and is
+            // not a status colour, so the green marked state still wins.
+            MaterialTheme.colorScheme.secondaryContainer
         },
         animationSpec = Motion.tweenEffectSlow(),
         label = "todayContainer",
@@ -189,17 +228,24 @@ private fun TodayStatusCard(record: AttendanceEntity?, modifier: Modifier = Modi
                     Icon(
                         Icons.Default.Schedule,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.size(32.dp),
                     )
                     Spacer(Modifier.height(Spacing.md))
-                    LiveClock()
-                    Spacer(Modifier.height(Spacing.xs))
-                    Text("Not marked yet", style = MaterialTheme.typography.titleMedium)
+                    // The status headline occupies the same slot that the marked
+                    // branch gives the check-in time. A live clock used to sit
+                    // here, which was never the answer to the question this
+                    // screen exists to answer, and the status bar already shows
+                    // the time a few hundred pixels above.
+                    Text(
+                        text = "Not marked yet",
+                        style = MaterialTheme.typography.displaySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
                     Text(
                         text = "Mark your attendance to check in for today.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 } else {
                     Icon(
@@ -242,28 +288,11 @@ private fun TodayStatusCard(record: AttendanceEntity?, modifier: Modifier = Modi
     }
 }
 
-/** A clock that ticks. It costs eight lines and makes the card feel alive. */
-@Composable
-private fun LiveClock(modifier: Modifier = Modifier) {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1_000)
-            now = System.currentTimeMillis()
-        }
-    }
-    Text(
-        text = now.formatTime(),
-        // Tabular figures, otherwise the digits jitter the layout every second.
-        style = MaterialTheme.typography.displaySmall.merge(TabularFigures),
-        modifier = modifier,
-    )
-}
-
 @Composable
 private fun PrimaryActionBlock(
     state: StaffHomeUiState,
     onMarkAttendance: () -> Unit,
+    onViewAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
@@ -273,7 +302,9 @@ private fun PrimaryActionBlock(
                     onClick = onMarkAttendance,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(64.dp),
+                        // The one deliberate exception to PrimaryButton's 56dp:
+                        // this is the action the whole app exists for.
+                        .heightIn(min = 64.dp),
                     shape = CircleShape,
                 ) {
                     Icon(Icons.Default.CameraAlt, contentDescription = null)
@@ -285,26 +316,16 @@ private fun PrimaryActionBlock(
             }
 
             PrimaryAction.AlreadyMarked -> {
-                OutlinedButton(
-                    onClick = {},
-                    enabled = false,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp),
-                    shape = CircleShape,
-                ) {
-                    Text("Already marked today")
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                // A disabled control always states its reason within a line of
-                // itself. A button that silently does nothing is a bug report.
-                Text(
-                    text = "You can mark attendance once per day.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // No disabled control. The card above already says the day is
+                // done in green, and a full-width dead button plus a sentence
+                // explaining why it is dead stated the same fact four times.
+                // Offer the one thing there is left to do instead.
+                TextButton(
+                    onClick = onViewAll,
                     modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
+                ) {
+                    Text("View my attendance")
+                }
             }
 
             PrimaryAction.NotEnrolled -> {
@@ -314,19 +335,32 @@ private fun PrimaryActionBlock(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     ),
+                    shape = MaterialTheme.shapes.extraLarge,
                 ) {
-                    Column(Modifier.padding(Spacing.xl)) {
-                        Text(
-                            text = "Your face is not enrolled yet",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    Row(
+                        modifier = Modifier.padding(Spacing.xxl),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.PersonOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(40.dp),
                         )
-                        Spacer(Modifier.height(Spacing.xs))
-                        Text(
-                            text = "Ask your admin to enrol your face so you can mark attendance.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        )
+                        Spacer(Modifier.width(Spacing.lg))
+                        Column {
+                            Text(
+                                text = "Your face is not enrolled yet",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text(
+                                text = "Ask your admin to enrol your face so you can mark attendance.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
+                        }
                     }
                 }
             }

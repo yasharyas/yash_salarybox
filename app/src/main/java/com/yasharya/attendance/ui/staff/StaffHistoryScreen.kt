@@ -17,8 +17,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import com.yasharya.attendance.data.local.entity.AttendanceEntity
 import com.yasharya.attendance.theme.Spacing
@@ -32,11 +34,14 @@ fun StaffHistoryScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text("My attendance") },
+                scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -65,14 +70,14 @@ fun StaffHistoryScreen(
             contentPadding = PaddingValues(bottom = Spacing.huge),
         ) {
             grouped.forEach { (month, monthRecords) ->
-                item(key = "header-$month") {
+                stickyHeader(key = "header-$month") {
                     Text(
                         text = month,
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.background)
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
                             .padding(horizontal = Spacing.gutter, vertical = Spacing.sm),
                     )
                 }
