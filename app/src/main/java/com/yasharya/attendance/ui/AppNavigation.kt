@@ -40,6 +40,12 @@ import com.yasharya.attendance.ui.login.LoginScreen
 import com.yasharya.attendance.ui.login.LoginViewModel
 import com.yasharya.attendance.ui.staff.StaffHomeScreen
 import com.yasharya.attendance.ui.staff.StaffHomeViewModel
+import androidx.compose.runtime.remember
+import com.yasharya.attendance.data.Session
+import kotlinx.coroutines.flow.map
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 
 @Composable
 fun AttendanceNavHost(modifier: Modifier = Modifier) {
@@ -47,14 +53,33 @@ fun AttendanceNavHost(modifier: Modifier = Modifier) {
     val container = context.appContainer
     val navController = rememberNavController()
 
-    val session by container.authRepository.session.collectAsStateWithLifecycle(initialValue = null)
+    // Three states, not two. Reading DataStore takes a moment, and collecting
+    // with a null initial value made "still loading" indistinguishable from
+    // "signed out": a returning user saw the login form flash past and slide
+    // away before landing on their own screen.
+    val sessionState by remember(container) {
+        container.authRepository.session
+            .map<Session?, SessionState> { SessionState.Resolved(it) }
+    }.collectAsStateWithLifecycle(initialValue = SessionState.Loading)
 
     // Session is the single source of truth for which half of the app is
     // reachable. Driving navigation from it rather than from the sign-in
     // callback means signing out from anywhere lands correctly, including
     // after process death.
-    LaunchedEffect(session) {
-        val target = when (session?.role) {
+    //
+    // Only on a genuine ROLE CHANGE, though. Navigating on every emission meant
+    // any configuration change (a rotation, a theme switch) re-ran this and
+    // popped the whole back stack to the root, throwing the admin out of a staff
+    // profile or out of a half-finished enrolment.
+    var handledRole by rememberSaveable { mutableStateOf<String?>(UNHANDLED) }
+
+    LaunchedEffect(sessionState) {
+        val resolved = sessionState as? SessionState.Resolved ?: return@LaunchedEffect
+        val role = resolved.session?.role?.name
+        if (handledRole == role) return@LaunchedEffect
+        handledRole = role
+
+        val target = when (resolved.session?.role) {
             UserRole.ADMIN -> Route.AdminStaffList
             UserRole.STAFF -> Route.StaffHome
             null -> Route.Login
@@ -64,6 +89,8 @@ fun AttendanceNavHost(modifier: Modifier = Modifier) {
             launchSingleTop = true
         }
     }
+
+    val session = (sessionState as? SessionState.Resolved)?.session
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         NavHost(
@@ -288,3 +315,15 @@ private fun AppContainer.staffHomeViewModel(staffId: Long) = StaffHomeViewModel(
 @Composable
 private fun rememberEnrolIntent() =
     androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+/**
+ * Distinguishes "we have not read the session yet" from "there is no session".
+ * Without it, every cold launch renders the login screen for a frame.
+ */
+private sealed interface SessionState {
+    data object Loading : SessionState
+    data class Resolved(val session: Session?) : SessionState
+}
+
+/** Distinct from null, which is the real "signed out" role. */
+private const val UNHANDLED = "role-not-yet-read"
