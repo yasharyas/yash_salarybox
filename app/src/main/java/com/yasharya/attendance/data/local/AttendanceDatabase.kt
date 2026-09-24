@@ -5,7 +5,6 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.yasharya.attendance.data.local.dao.AttendanceDao
 import com.yasharya.attendance.data.local.dao.FaceTemplateDao
 import com.yasharya.attendance.data.local.dao.StaffDao
@@ -14,10 +13,6 @@ import com.yasharya.attendance.data.local.entity.AttendanceEntity
 import com.yasharya.attendance.data.local.entity.FaceTemplateEntity
 import com.yasharya.attendance.data.local.entity.StaffEntity
 import com.yasharya.attendance.data.local.entity.UserEntity
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 @Database(
     entities = [
@@ -46,20 +41,19 @@ abstract class AttendanceDatabase : RoomDatabase() {
                 instance ?: build(context.applicationContext).also { instance = it }
             }
 
-        private fun build(context: Context): AttendanceDatabase {
-            // Held outside the builder so the callback can seed off the main thread
-            // without blocking whoever triggered the first database open.
-            val seedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-            return Room.databaseBuilder(context, AttendanceDatabase::class.java, NAME)
-                .addCallback(
-                    object : RoomDatabase.Callback() {
-                        override fun onCreate(db: SupportSQLiteDatabase) {
-                            super.onCreate(db)
-                            seedScope.launch { DemoSeed.apply(get(context)) }
-                        }
-                    },
-                )
-                .build()
-        }
+        /**
+         * Seeding deliberately does NOT happen in a RoomDatabase.Callback.
+         *
+         * onCreate fires part-way through the first database access, so seeding
+         * from there either races the query that triggered it (the caller reads
+         * an empty table and moves on) or re-enters the database mid-transaction.
+         * The first symptom is the nastier one: sign-in fails with correct
+         * credentials, intermittently, and only on a fresh install.
+         *
+         * Instead AppContainer starts the seed once and anything that depends on
+         * it awaits that job. See AppContainer.awaitSeed.
+         */
+        private fun build(context: Context): AttendanceDatabase =
+            Room.databaseBuilder(context, AttendanceDatabase::class.java, NAME).build()
     }
 }

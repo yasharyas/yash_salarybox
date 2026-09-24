@@ -5,11 +5,17 @@ import android.content.Context
 import com.yasharya.attendance.data.PhotoStorage
 import com.yasharya.attendance.data.SessionStore
 import com.yasharya.attendance.data.local.AttendanceDatabase
+import com.yasharya.attendance.data.local.DemoSeed
 import com.yasharya.attendance.data.repository.AttendanceRepository
 import com.yasharya.attendance.data.repository.AuthRepository
 import com.yasharya.attendance.data.repository.StaffRepository
 import com.yasharya.attendance.face.FaceRecognitionService
 import com.yasharya.attendance.location.LocationProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 
 /**
  * Manual dependency wiring.
@@ -31,9 +37,25 @@ class AppContainer(context: Context) {
 
     val faceRecognition = FaceRecognitionService(appContext)
 
+    private val containerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Demo seeding, started once at startup and awaited by anything that reads
+     * the tables it fills.
+     *
+     * This is a Deferred rather than a fire-and-forget launch for one reason:
+     * sign-in is usually the very first database read, and if it does not wait
+     * it queries an empty table and rejects valid credentials. DemoSeed itself
+     * is idempotent, so a second call is harmless.
+     */
+    private val seedJob: Deferred<Unit> = containerScope.async {
+        runCatching { DemoSeed.apply(database) }.getOrElse { }
+    }
+
     val authRepository = AuthRepository(
         userDao = database.userDao(),
         sessionStore = sessionStore,
+        awaitReady = seedJob::await,
     )
 
     val staffRepository = StaffRepository(

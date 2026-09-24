@@ -22,10 +22,18 @@ sealed interface SignInResult {
 class AuthRepository(
     private val userDao: UserDao,
     private val sessionStore: SessionStore,
+    /**
+     * Suspends until first-run seeding has finished. Sign-in is normally the
+     * first read of the users table, so without this it can query an empty
+     * database and reject valid credentials on a fresh install.
+     */
+    private val awaitReady: suspend () -> Unit = {},
 ) {
     val session: Flow<Session?> = sessionStore.session
 
     suspend fun signIn(username: String, password: String): SignInResult = withContext(Dispatchers.Default) {
+        awaitReady()
+
         val user = userDao.findByUsername(username.trim().uppercase())
             ?: userDao.findByUsername(username.trim())
             ?: return@withContext SignInResult.InvalidCredentials
