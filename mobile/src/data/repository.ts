@@ -7,6 +7,7 @@
  * splitting it would only add import statements.
  */
 
+import { dataChanged } from './changes';
 import { attendance, staffStore, templates, users } from './db';
 import { constantTimeEquals, hashPassword, newSalt } from './crypto';
 import type { AttendanceRecord, FaceTemplate, Session, Staff, User } from './types';
@@ -155,6 +156,7 @@ export async function addStaff(name: string, employeeId: string): Promise<AddSta
     enrolledAt: null,
   });
   await users.put(await newStaffUser(trimmedId, staffId));
+  await dataChanged();
   return { ok: true, staffId };
 }
 
@@ -169,6 +171,7 @@ export async function removeStaff(id: number): Promise<void> {
   // happened, and it does not stop being true because someone left.
   for (const template of await templates.forStaff(id)) await templates.remove(template.id);
   await staffStore.remove(id);
+  await dataChanged();
 }
 
 /* -------------------------------------------------------------------------
@@ -197,6 +200,7 @@ export async function saveEnrolment(
 
   const person = await staffStore.get(staffId);
   if (person) await staffStore.put({ ...person, enrolledAt: now });
+  await dataChanged();
 }
 
 /* -------------------------------------------------------------------------
@@ -223,6 +227,7 @@ export async function recordAttendance(
   record: Omit<AttendanceRecord, 'id'>,
 ): Promise<AttendanceRecord> {
   const id = await attendance.add(record);
+  await dataChanged();
   return { ...record, id };
 }
 

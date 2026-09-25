@@ -51,8 +51,11 @@ export default function StaffProfile() {
 
   const confirmDelete = async () => {
     setConfirming(false);
-    await removeStaff(staffId);
+    // Leave first, then remove. A write reloads every mounted screen, this one
+    // included, and removing first would re-render this profile as a blank
+    // "Staff member" for the moment before the navigation lands.
     router.back();
+    await removeStaff(staffId);
   };
 
   if (loading && !staff) {
