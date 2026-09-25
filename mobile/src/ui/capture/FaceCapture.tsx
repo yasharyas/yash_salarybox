@@ -23,7 +23,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Text, View } from 'react-native';
-import Svg, { Defs, Ellipse, Mask, Rect } from 'react-native-svg';
+import Svg, { Defs, Ellipse, Mask, Path, Rect } from 'react-native-svg';
 
 import { alignFace } from '@/src/face/align';
 import { getLandmarker } from '@/src/face/pipeline';
@@ -297,67 +297,97 @@ export function FaceCapture({ active, attempt = 0, onCapture, prompt }: FaceCapt
 }
 
 /**
- * The oval, plus a scrim over everything outside it.
+ * The oval, plus a scrim over everything outside it, plus the hold ring.
  *
  * The scrim is the part that does the work: it tells you where to put your
  * face without a word of instruction, and it makes the "centre your face"
  * guidance redundant for most people, which is the point of good guidance.
+ *
+ * Everything is drawn in real pixels from a measured box. The first version
+ * drew in a stretched 0-100 viewBox with non-scaling strokes, which looks
+ * identical until you add a dash: dash lengths are then in screen pixels while
+ * the ellipse is in viewBox units, so "215" covered a sixth of a 1,300px oval
+ * and the ring stopped a sixth of the way round, in the same green as the
+ * outline beneath it. Nobody could see it. Pixels on both sides of the maths
+ * make the ring end exactly where the hold ends.
  */
 function OvalGuide({ ready, progress }: { ready: boolean; progress: number }) {
-  const stroke = ready ? '#3DD68C' : '#FFFFFF';
-  const strokeOpacity = ready ? 1 : 0.6;
+  const [box, setBox] = useState({ width: 0, height: 0 });
+  const { width, height } = box;
+
+  const cx = width / 2;
+  const cy = height * 0.45;
+  const rx = width * 0.3;
+  const ry = height * 0.38;
+  // Ramanujan's approximation. Exact enough that the ring closes on itself.
+  const circumference =
+    Math.PI * (3 * (rx + ry) - Math.sqrt((3 * rx + ry) * (rx + 3 * ry)));
+  // Two half arcs from the top of the oval, clockwise, so the ring grows the
+  // way a clock hand moves rather than from the ellipse's default 3 o'clock.
+  const ring =
+    `M ${cx} ${cy - ry} ` +
+    `A ${rx} ${ry} 0 1 1 ${cx} ${cy + ry} ` +
+    `A ${rx} ${ry} 0 1 1 ${cx} ${cy - ry}`;
+
   return (
-    <View className="absolute inset-0" style={{ pointerEvents: 'none' }}>
-      <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <Defs>
-          <Mask id="cutout">
-            <Rect x="0" y="0" width="100" height="100" fill="white" />
-            <Ellipse cx="50" cy="45" rx="30" ry="38" fill="black" />
-          </Mask>
-        </Defs>
-        {/*
-          fill plus fillOpacity rather than an rgba() fill string. Both parse,
-          but an alpha buried in a colour string is the kind of thing an SVG
-          renderer quietly drops, and a scrim that silently stops dimming
-          removes the one cue that tells you where to put your face.
-        */}
-        <Rect
-          x="0"
-          y="0"
-          width="100"
-          height="100"
-          fill="#000000"
-          fillOpacity={0.6}
-          mask="url(#cutout)"
-        />
-        <Ellipse
-          cx="50"
-          cy="45"
-          rx="30"
-          ry="38"
-          fill="none"
-          stroke={stroke}
-          strokeOpacity={strokeOpacity}
-          strokeWidth={ready ? 1.1 : 0.6}
-          vectorEffect="non-scaling-stroke"
-        />
-        {progress > 0 ? (
-          <Ellipse
-            cx="50"
-            cy="45"
-            rx="30"
-            ry="38"
-            fill="none"
-            stroke="#3DD68C"
-            strokeWidth={1.4}
-            strokeLinecap="round"
-            // A dash that grows with the streak: a progress ring without the
-            // arithmetic of arcs, and it reads as "keep going" at a glance.
-            strokeDasharray={`${progress * 215} 215`}
-            vectorEffect="non-scaling-stroke"
+    <View
+      className="absolute inset-0"
+      style={{ pointerEvents: 'none' }}
+      onLayout={(event) => {
+        const { width: w, height: h } = event.nativeEvent.layout;
+        if (w !== width || h !== height) setBox({ width: w, height: h });
+      }}
+    >
+      {width > 0 && height > 0 ? (
+        <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+          <Defs>
+            <Mask id="cutout">
+              <Rect x="0" y="0" width={width} height={height} fill="white" />
+              <Ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill="black" />
+            </Mask>
+          </Defs>
+          {/*
+            fill plus fillOpacity rather than an rgba() fill string. Both parse,
+            but an alpha buried in a colour string is the kind of thing an SVG
+            renderer quietly drops, and a scrim that silently stops dimming
+            removes the one cue that tells you where to put your face.
+          */}
+          <Rect
+            x="0"
+            y="0"
+            width={width}
+            height={height}
+            fill="#000000"
+            fillOpacity={0.6}
+            mask="url(#cutout)"
           />
-        ) : null}
-      </Svg>
+          {/*
+            While the hold runs, the outline dims to a track and the ring is
+            the bright, thicker thing on top of it. Same colour at the same
+            weight would hide the only feedback that says "keep still".
+          */}
+          <Ellipse
+            cx={cx}
+            cy={cy}
+            rx={rx}
+            ry={ry}
+            fill="none"
+            stroke={ready ? '#3DD68C' : '#FFFFFF'}
+            strokeOpacity={ready ? 0.35 : 0.6}
+            strokeWidth={ready ? 3 : 1.5}
+          />
+          {progress > 0 ? (
+            <Path
+              d={ring}
+              fill="none"
+              stroke="#3DD68C"
+              strokeWidth={5}
+              strokeLinecap="round"
+              strokeDasharray={`${progress * circumference} ${circumference}`}
+            />
+          ) : null}
+        </Svg>
+      ) : null}
     </View>
   );
 }
