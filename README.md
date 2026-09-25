@@ -369,8 +369,8 @@ in the aligned output at all.
 
 ### The threshold, and why measuring it mattered
 
-`FaceRecognitionAccuracyTest` runs this exact pipeline on-device over 8
-photographs of 4 people and reports every pairwise score:
+`FaceRecognitionAccuracyTest` runs this exact pipeline on-device over 7
+photographs of 4 people (21 pairs) and reports every pairwise score:
 
 | | pairs | min | mean | max |
 |---|---|---|---|---|

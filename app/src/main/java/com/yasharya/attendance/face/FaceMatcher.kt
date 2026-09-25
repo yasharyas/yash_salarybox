@@ -15,7 +15,7 @@ object FaceMatcher {
      * Accept at or above this cosine similarity.
      *
      * MEASURED, not guessed. FaceRecognitionAccuracyTest runs this exact pipeline
-     * on-device over 8 photographs of 4 people and reports:
+     * on-device over 7 photographs of 4 people and reports:
      *
      *   genuine  (same person, 6 pairs) : min 0.832  mean 0.914  max 0.998
      *   impostor (different people, 15) : min -0.282 mean -0.020 max 0.121
