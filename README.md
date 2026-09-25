@@ -20,24 +20,25 @@ in Safari on an iPhone and use Add to Home Screen.
 
 ## Demo
 
-### Marking attendance with a face match
+### Android: marking attendance with a face match
 
 The quality gates pass, auto-capture counts down, the selfie is matched against
 the enrolled templates, and the record is written. This is the real pipeline:
-ML Kit detection, eye alignment, MobileFaceNet, cosine match. **This attempt
-scored 0.9933 against a 0.55 threshold.**
+ML Kit detection, eye alignment, MobileFaceNet, cosine match. **A capture from
+this setup scores 0.9933 against a 0.55 threshold**: it is the 99% on the record
+the admin clip below opens.
 
-<img src="docs/media/mark-attendance.gif" width="300" alt="Staff member marks attendance: the oval turns green, a three second countdown runs, the app says Checking it is you, then Attendance marked at 4:45 PM" />
+<img src="docs/media/mark-attendance.gif" width="300" alt="Aisha marks attendance on Android: the oval turns green, a 3, 2, 1 countdown runs, a pixel-art face scans while the app says Checking it is you, then a pixel tick and Attendance marked at 8:55 AM in Mountain View" />
 
-### The admin side
+### Android: the admin side
 
-Staff list showing who still needs enrolling, then a profile with the three
-enrolment crops, the attendance history, and the match confidence for each
-record.
+Staff list showing who still needs enrolling, a profile that is not enrolled
+yet, then one with the three enrolment crops, the attendance history, and the
+match confidence for each record.
 
-<img src="docs/media/admin-review.gif" width="300" alt="Admin opens a staff profile showing three enrolled face crops, Face enrolled, and an attendance record at 99 percent match" />
+<img src="docs/media/admin-review.gif" width="300" alt="Admin opens Priya Sharma, whose card says Face not enrolled beside a pixel-art face with a question mark, goes back, then opens Aisha Khan: three enrolled face crops, Face enrolled, and a 10:14 AM record in Mountain View at 99 percent" />
 
-### Adding a staff member
+### Android: adding a staff member
 
 Validation is late-then-early: nothing is judged until a field loses focus, and
 once an error has shown it clears on the keystroke that fixes it. A duplicate
@@ -48,9 +49,44 @@ employee ID names whoever already holds it.
 > **About the face in these recordings.** No real device was available, so these
 > are Android 16 emulator captures with a **photograph** fed to the emulator's
 > virtual front camera (`-camera-front imagefile:`). It is the standard
-> `ageitgey/face_recognition` test fixture, not a live person and not a webcam.
-> The detection, alignment, embedding and matching are genuinely running; only
-> the light hitting the lens is synthetic.
+> `ageitgey/face_recognition` test fixture, a photograph of a real public
+> figure, not a live person and not a webcam. The detection, alignment,
+> embedding and matching are genuinely running; only the light hitting the lens
+> is synthetic. The location is the emulator's default GPS position, which is
+> why it says Mountain View.
+
+### Web (the iPhone build): marking attendance
+
+The same flow in the gluestack build. The ring around the oval fills while you
+hold still, then the pixel-art scanner runs while the same MobileFaceNet file
+checks the match, here inside the browser.
+
+<img src="docs/media/web-mark-attendance.gif" width="300" alt="Web build in dark mode: Priya taps Mark attendance, the camera starts, a green ring fills around the oval while the app says Hold it right there, a pixel-art face scans while it says Checking it is you, then a pixel tick and Attendance marked" />
+
+### Web: a different face is turned away
+
+Someone else tries Priya's account. The capture passes every quality gate, the
+match fails, and nothing is written.
+
+<img src="docs/media/web-impostor.gif" width="300" alt="Web build: a different person's face fills the oval, the ring completes, the app checks, then a pixel cross and That is not a match, with Try again and Back" />
+
+### Web: enrolling a face from scratch
+
+The admin enrols Priya: three captures from three slightly different poses,
+each one only after a full hold, then the profile flips to enrolled.
+
+<img src="docs/media/web-admin-enrol.gif" width="300" alt="Web build: admin signs in, opens Priya Sharma whose card says Face not enrolled beside a pixel-art face with a question mark, taps Enrol face now, three captures fill three thumbnails, Three good captures, Save enrolment, and the profile shows Face enrolled from 3 angles" />
+
+> **About the web recordings.** Headless Chrome at iPhone size in dark mode, with
+> the camera replaced by a canvas that draws the same kind of test photograph
+> (also from `ageitgey/face_recognition`, also real public figures). Between
+> enrolment captures the photo is nudged and tilted to act out a person
+> re-posing. The location is a fixed Mumbai coordinate returned after 1.2
+> seconds, roughly what a real GPS fix takes. The grey circle is a tap marker
+> added for the recording. One edit: on the rejected attempt the "Checking it is
+> you" frame is held for about 0.6 seconds, because the mismatch is decided
+> within a single frame of the recording and would otherwise flash past
+> unseen.
 
 ---
 
