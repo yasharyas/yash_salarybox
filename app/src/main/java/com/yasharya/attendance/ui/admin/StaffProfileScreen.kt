@@ -59,6 +59,7 @@ import java.io.File
 import kotlin.math.roundToInt
 import com.yasharya.attendance.ui.components.Avatar
 import com.yasharya.attendance.ui.pixel.FACE_UNKNOWN
+import com.yasharya.attendance.ui.pixel.PixelSpinner
 import com.yasharya.attendance.ui.pixel.PixelSprite
 import com.yasharya.attendance.ui.components.PrimaryButton
 
@@ -98,6 +99,26 @@ fun StaffProfileScreen(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(bottom = Spacing.huge),
         ) {
+            // Nothing is known about this person until the first query returns.
+            // Rendering the normal layout from the empty defaults used to say an
+            // ENROLLED staff member was "not enrolled", with a blank name and an
+            // "Enrol face now" button, for as long as the query took. It showed
+            // up in a demo recording before anyone noticed it on screen: a flash
+            // of wrong information is worse than a moment of honest waiting.
+            if (state.isLoading) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillParentMaxWidth()
+                            .padding(top = Spacing.huge),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        PixelSpinner()
+                    }
+                }
+                return@LazyColumn
+            }
+
             item {
                 Row(
                     modifier = Modifier.padding(horizontal = Spacing.gutter),

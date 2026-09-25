@@ -65,6 +65,7 @@ import com.yasharya.attendance.util.formatDay
 import com.yasharya.attendance.util.formatFullDay
 import com.yasharya.attendance.util.formatTime
 import com.yasharya.attendance.util.greetingFor
+import com.yasharya.attendance.ui.pixel.PixelSpinner
 import kotlinx.coroutines.delay
 import java.time.ZoneId
 
@@ -105,6 +106,23 @@ fun StaffHomeScreen(
                 .padding(padding),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Spacing.huge),
         ) {
+            // Until the first query returns, the defaults say "not marked yet"
+            // and greet nobody by name. For someone who marked attendance an hour
+            // ago, that is wrong information, not a neutral placeholder.
+            if (state.isLoading) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillParentMaxWidth()
+                            .padding(top = Spacing.huge),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        PixelSpinner()
+                    }
+                }
+                return@LazyColumn
+            }
+
             item {
                 Column(Modifier.padding(horizontal = Spacing.gutter, vertical = Spacing.lg)) {
                     Text(

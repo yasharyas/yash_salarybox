@@ -68,7 +68,14 @@ class StaffHomeViewModel(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        // Eagerly, not WhileSubscribed(5_000). The upstream is local Room
+        // queries, so keeping it alive costs nothing, and this screen sits on
+        // the back stack while the user changes its data on the screen above
+        // (marking attendance, enrolling a face). With a 5 second timeout the
+        // upstream stopped during that visit and the stale value was replayed
+        // on return: "Not marked yet" straight after a successful mark. Caught
+        // by reading a demo recording frame by frame.
+        started = SharingStarted.Eagerly,
         initialValue = StaffHomeUiState(),
     )
 
