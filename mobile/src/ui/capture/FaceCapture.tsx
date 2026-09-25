@@ -81,6 +81,13 @@ export function FaceCapture({ active, attempt = 0, onCapture, prompt }: FaceCapt
   const hostRef = useRef<View>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streakRef = useRef(0);
+  // When the current run of good frames began, or 0 when there is no run. A
+  // ref rather than a local of the camera effect, so a new attempt can clear
+  // it. As a local it outlived every capture: the second enrolment pose found
+  // a timestamp from the first one already more than HOLD_MS old and fired
+  // four frames after re-arming, so the "three poses" were one pose, three
+  // times, a tenth of a second apart.
+  const readySinceRef = useRef(0);
   const handedOffRef = useRef(false);
   const activeRef = useRef(active);
   const onCaptureRef = useRef(onCapture);
@@ -99,6 +106,7 @@ export function FaceCapture({ active, attempt = 0, onCapture, prompt }: FaceCapt
   useEffect(() => {
     handedOffRef.current = false;
     streakRef.current = 0;
+    readySinceRef.current = 0;
     setProgress(0);
   }, [attempt]);
 
@@ -111,7 +119,6 @@ export function FaceCapture({ active, attempt = 0, onCapture, prompt }: FaceCapt
     let evaluator: FaceQualityEvaluator | null = null;
     let timestamp = 0;
     let failures = 0;
-    let readySince = 0;
 
     const host = hostRef.current as unknown as HTMLElement | null;
     if (!host) return;
@@ -180,12 +187,13 @@ export function FaceCapture({ active, attempt = 0, onCapture, prompt }: FaceCapt
 
           if (next.kind === 'ready') {
             const now = performance.now();
-            if (readySince === 0) readySince = now;
+            if (readySinceRef.current === 0) readySinceRef.current = now;
+            const held = now - readySinceRef.current;
             streakRef.current += 1;
-            setProgress(Math.min(1, (now - readySince) / HOLD_MS));
+            setProgress(Math.min(1, held / HOLD_MS));
 
             if (
-              now - readySince >= HOLD_MS &&
+              held >= HOLD_MS &&
               streakRef.current >= MIN_READY_FRAMES &&
               next.face
             ) {
@@ -193,8 +201,8 @@ export function FaceCapture({ active, attempt = 0, onCapture, prompt }: FaceCapt
               setState({ kind: 'capturing', guidance: 'Got it', face: next.face });
               capture(video, next.face.eyeA, next.face.eyeB);
             }
-          } else if (readySince !== 0) {
-            readySince = 0;
+          } else if (readySinceRef.current !== 0) {
+            readySinceRef.current = 0;
             streakRef.current = 0;
             setProgress(0);
           }
@@ -224,6 +232,7 @@ export function FaceCapture({ active, attempt = 0, onCapture, prompt }: FaceCapt
         // Landmarks were good enough a frame ago; let the next attempt try.
         handedOffRef.current = false;
         streakRef.current = 0;
+        readySinceRef.current = 0;
         setProgress(0);
         return;
       }
