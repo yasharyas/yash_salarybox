@@ -110,22 +110,28 @@ val CLIPBOARD: Sprite = listOf(
     "................",
 )
 
-/** Nobody enrolled yet: a face outline that has not been filled in. */
+/**
+ * Nobody enrolled yet: a face with a question mark where the features go.
+ *
+ * Filled, not outlined. The first version was the outline alone, and the
+ * outline colour is near-black in the dark palette, so on a dark card the
+ * sprite simply was not there. A filled face carries its own background.
+ */
 val FACE_UNKNOWN: Sprite = listOf(
     "................",
     ".....oooooo.....",
-    "...oo......oo...",
-    "..o....oo....o..",
-    "..o...o..o...o..",
-    ".o....o..o....o.",
-    ".o.......o....o.",
-    ".o......o.....o.",
-    ".o.....o......o.",
-    ".o.....o......o.",
-    ".o............o.",
-    "..o....o.....o..",
-    "..o....o.....o..",
-    "...oo......oo...",
+    "...ooffffffoo...",
+    "..offffooffffo..",
+    ".offffoffoffffo.",
+    ".offffoffoffffo.",
+    ".offfffffoffffo.",
+    ".offffffofffffo.",
+    ".offfffoffffffo.",
+    ".offfffoffffffo.",
+    ".offffffffffffo.",
+    ".offfffoffffffo.",
+    "..offffofffffo..",
+    "...ooffffffoo...",
     ".....oooooo.....",
     "................",
 )
