@@ -11,9 +11,17 @@
  * paying for 256 nodes a frame on a mid-range phone would be felt.
  *
  * SVG rather than Views or a canvas because it is resolution independent and
- * works identically on native and web. shapeRendering is left at the default:
- * the rects are axis aligned on whole-number coordinates, so they land on
- * exact pixel boundaries at any integer scale without needing hinting.
+ * works identically on native and web.
+ *
+ * Every rect is drawn slightly larger than its cell, overlapping the next row
+ * and the next run. Whole-number coordinates only land on whole pixels when
+ * the size is a multiple of the grid, and most sizes here are not: 44, 72 and
+ * 116 put cell edges at fractions of a pixel. Two anti-aliased edges meeting
+ * there each leave the pixel part-covered, the background shows through, and
+ * every sprite gets faint horizontal pinstripes. Rows are painted top to
+ * bottom and left to right, so the overlap is always covered by the cell that
+ * follows it; only the bottom and right silhouette grow, by under a pixel. The
+ * Android renderer does the same thing for the same reason.
  */
 
 import { memo, useMemo } from 'react';
@@ -66,6 +74,10 @@ function PixelSpriteInner({ rows, palette, size, style, label }: PixelSpriteProp
 
   if (width === 0 || height === 0) return null;
 
+  // Three quarters of a screen point, in grid units, and never more than a
+  // fifth of a cell so small sprites keep their shape.
+  const bleed = Math.min(0.2, (0.75 * width) / size);
+
   return (
     <View
       style={[{ width: size, height: size }, style]}
@@ -81,8 +93,8 @@ function PixelSpriteInner({ rows, palette, size, style, label }: PixelSpriteProp
             key={`${run.y}-${run.x}`}
             x={run.x}
             y={run.y}
-            width={run.width}
-            height={1}
+            width={run.width + bleed}
+            height={1 + bleed}
             fill={run.fill}
           />
         ))}
